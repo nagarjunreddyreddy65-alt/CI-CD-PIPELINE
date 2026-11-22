@@ -41,3 +41,17 @@ Chronological record of design decisions, implementation phases, benchmarks, and
   - `app/api/routes/analysis.py`: Added REST endpoints `POST /api/v1/analysis/diff` and `GET /api/v1/analysis/graph`.
   - Comprehensive unit test suite: Added 22 new tests across change analysis, AST parsing, graph traversal, and safety rule fallback triggers.
   - Total test count expanded to **54 tests**; 100% passing.
+
+---
+
+## 2026-11-22 — Phase 4: Machine Learning Intelligence Completed
+- **Status:** Complete
+- **Key Deliverables:**
+  - `app/ml/feature_extractor.py`: Extracts 10 reproducible pre-execution features (`changed_files_count`, `lines_added`, `lines_deleted`, `total_lines_changed`, `affected_modules_count`, `selected_tests_count`, `is_sensitive_change`, `has_test_file_changes`, `historical_failure_rate`, `previous_execution_duration`). Strictly prevents future information leakage.
+  - `app/ml/failure_predictor.py`: Implemented `RandomForestClassifier` with balanced class weights. Outputs failure probability ($0.0 - 1.0$), class (0/1), confidence score, and high-risk threshold flag. Evaluates Precision, Recall, F1-score, ROC-AUC, and Confusion Matrix.
+  - `app/ml/runtime_predictor.py`: Implemented `RandomForestRegressor` predicting duration in seconds with lower/upper confidence bounds. Evaluates MAE, RMSE, and $R^2$.
+  - `app/ml/model_manager.py`: Manages model artifact serialization with `joblib`, synthetic bootstrap historical training data generation, and enforces Safety Rule 17 (minimum 15 historical runs required before models can be used in inference).
+  - `app/api/routes/predictions.py`: Added REST endpoints `POST /api/v1/predictions/predict`, `POST /api/v1/predictions/train`, and `GET /api/v1/predictions/models`.
+  - Added 14 new tests in `tests/test_feature_extractor.py`, `tests/test_ml_models.py`, `tests/test_model_manager.py`, and `tests/test_predictions_api.py`.
+  - Total test count expanded to **68 tests**; 100% passing.
+
