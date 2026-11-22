@@ -3,9 +3,12 @@ SQLAlchemy Database Engine and Scoped Session Factory.
 Provides seamless fallback between PostgreSQL (production) and SQLite (testing/local).
 """
 
-from typing import Generator
+from collections.abc import Generator
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -32,7 +35,7 @@ def get_engine():
             with engine.connect():
                 logger.info("Successfully connected to primary PostgreSQL database.")
                 return engine
-        except Exception as e:
+        except (SQLAlchemyError, OSError, ImportError) as e:
             logger.warning(
                 f"PostgreSQL connection unavailable ({e}). Falling back to SQLite: {settings.SQLITE_FALLBACK_URL}"
             )

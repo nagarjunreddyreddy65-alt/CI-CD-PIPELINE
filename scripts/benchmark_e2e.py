@@ -9,28 +9,29 @@ Evaluates and compares:
 Measures execution time, CPU/memory consumption, test suite reduction %, and defect escape rate.
 """
 
+import json
 import os
+import subprocess
 import sys
 import time
-import json
+from typing import Any
+
 import psutil
-import subprocess
-from typing import Dict, Any, List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.analysis.test_mapper import TestDependencyMapper
-from app.optimization.safety_policy import SafetyPolicyEvaluator, SafetyContext
+from app.optimization.safety_policy import SafetyContext, SafetyPolicyEvaluator
 
 
-def run_pytest_command(args: List[str]) -> Dict[str, Any]:
+def run_pytest_command(args: list[str]) -> dict[str, Any]:
     """Runs a pytest invocation while tracking duration and resource telemetry."""
     start_cpu = psutil.cpu_percent(interval=0.2)
-    start_mem = psutil.virtual_memory().used / (1024 * 1024)
+    _start_mem = psutil.virtual_memory().used / (1024 * 1024)
     start_time = time.perf_counter()
 
     cmd = [sys.executable, "-m", "pytest"] + args
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     end_time = time.perf_counter()
     end_cpu = psutil.cpu_percent(interval=0.2)
@@ -47,7 +48,7 @@ def run_pytest_command(args: List[str]) -> Dict[str, Any]:
     }
 
 
-def execute_e2e_benchmark() -> Dict[str, Any]:
+def execute_e2e_benchmark() -> dict[str, Any]:
     print("=" * 75)
     print("🚀 AUTONOMOUS DEVOPS: END-TO-END BENCHMARK & VALIDATION SUITE")
     print("=" * 75)
@@ -60,7 +61,7 @@ def execute_e2e_benchmark() -> Dict[str, Any]:
     total_sample_tests = len(all_tests)
     print(f"📦 Total Target Application Unit Tests Discovered: {total_sample_tests}")
 
-    results: Dict[str, Any] = {
+    results: dict[str, Any] = {
         "benchmark_timestamp": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()),
         "total_available_target_tests": total_sample_tests,
         "scenarios": {},
@@ -75,18 +76,31 @@ def execute_e2e_benchmark() -> Dict[str, Any]:
     baseline_run["decision"] = "FULL_SUITE_BASELINE"
     baseline_run["reduction_pct"] = 0.0
     results["scenarios"]["baseline_full_suite"] = baseline_run
-    print(f"  ⏱ Duration: {baseline_run['duration_sec']}s | Tests: {total_sample_tests} | Status: {baseline_run['status']}")
+    print(
+        f"  ⏱ Duration: {baseline_run['duration_sec']}s | Tests: {total_sample_tests} | Status: {baseline_run['status']}"
+    )
 
     # -------------------------------------------------------------------------
     # Scenario 2: Optimized Leaf Change (Math Operations)
     # -------------------------------------------------------------------------
-    print("\n[Scenario 2/5] Evaluating Isolated Non-Sensitive Change (sample_app/utils/math_ops.py)...")
-    math_change = [{"path": "sample_app/utils/math_ops.py", "change_type": "MODIFIED", "lines_added": 3, "lines_deleted": 1}]
+    print(
+        "\n[Scenario 2/5] Evaluating Isolated Non-Sensitive Change (sample_app/utils/math_ops.py)..."
+    )
+    math_change = [
+        {
+            "path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 3,
+            "lines_deleted": 1,
+        }
+    ]
     map_res = mapper.map_changes_to_tests(math_change)
 
     selected_tests = [t for t in map_res.affected_test_identifiers if "tests_sample_app" in t]
     selected_count = len(selected_tests)
-    reduction = round(((total_sample_tests - selected_count) / max(1, total_sample_tests)) * 100.0, 1)
+    reduction = round(
+        ((total_sample_tests - selected_count) / max(1, total_sample_tests)) * 100.0, 1
+    )
 
     opt_run = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
     opt_run["tests_executed"] = selected_count
@@ -94,13 +108,24 @@ def execute_e2e_benchmark() -> Dict[str, Any]:
     opt_run["reduction_pct"] = reduction
     opt_run["fallback_triggered"] = map_res.fallback_required
     results["scenarios"]["optimized_math_change"] = opt_run
-    print(f"  ⏱ Duration: {opt_run['duration_sec']}s | Tests: {selected_count}/{total_sample_tests} ({reduction}% reduction)")
+    print(
+        f"  ⏱ Duration: {opt_run['duration_sec']}s | Tests: {selected_count}/{total_sample_tests} ({reduction}% reduction)"
+    )
 
     # -------------------------------------------------------------------------
     # Scenario 3: Sensitive Authentication Change (Rule 2 Fallback)
     # -------------------------------------------------------------------------
-    print("\n[Scenario 3/5] Evaluating Sensitive Auth Change (sample_app/auth/security_service.py)...")
-    auth_change = [{"path": "sample_app/auth/security_service.py", "change_type": "MODIFIED", "lines_added": 2, "lines_deleted": 0}]
+    print(
+        "\n[Scenario 3/5] Evaluating Sensitive Auth Change (sample_app/auth/security_service.py)..."
+    )
+    auth_change = [
+        {
+            "path": "sample_app/auth/security_service.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 0,
+        }
+    ]
     auth_map = mapper.map_changes_to_tests(auth_change)
 
     auth_run = run_pytest_command(["tests_sample_app/", "-p", "no:httpbin", "-q"])
@@ -110,13 +135,24 @@ def execute_e2e_benchmark() -> Dict[str, Any]:
     auth_run["reduction_pct"] = 0.0
     results["scenarios"]["safety_fallback_auth"] = auth_run
     print(f"  🛡️ Rule Triggered: {auth_map.fallback_reason}")
-    print(f"  ⏱ Duration: {auth_run['duration_sec']}s | Safety Fallback Verified (100% test coverage enforced)")
+    print(
+        f"  ⏱ Duration: {auth_run['duration_sec']}s | Safety Fallback Verified (100% test coverage enforced)"
+    )
 
     # -------------------------------------------------------------------------
     # Scenario 4: Database Migration Change (Rule 1 Fallback)
     # -------------------------------------------------------------------------
-    print("\n[Scenario 4/5] Evaluating Database Schema Change (alembic/versions/test_migration.py)...")
-    mig_change = [{"path": "alembic/versions/001_initial.py", "change_type": "MODIFIED", "lines_added": 10, "lines_deleted": 0}]
+    print(
+        "\n[Scenario 4/5] Evaluating Database Schema Change (alembic/versions/test_migration.py)..."
+    )
+    mig_change = [
+        {
+            "path": "alembic/versions/001_initial.py",
+            "change_type": "MODIFIED",
+            "lines_added": 10,
+            "lines_deleted": 0,
+        }
+    ]
     mig_map = mapper.map_changes_to_tests(mig_change)
 
     mig_run = run_pytest_command(["tests_sample_app/", "-p", "no:httpbin", "-q"])
@@ -174,7 +210,9 @@ def execute_e2e_benchmark() -> Dict[str, Any]:
     print("=" * 75)
     print(f"  ⚡ Baseline Execution Duration:    {summary['baseline_duration_sec']}s")
     print(f"  🚀 Optimized Execution Duration:   {summary['optimized_duration_sec']}s")
-    print(f"  ⏱ Duration Saved:                 {summary['time_saved_sec']}s ({summary['time_saved_pct']}%)")
+    print(
+        f"  ⏱ Duration Saved:                 {summary['time_saved_sec']}s ({summary['time_saved_pct']}%)"
+    )
     print(f"  📉 Test Suite Reduction on Leaf:   {summary['test_reduction_pct_on_leaf']}%")
     print(f"  🛡️ Safety Fallback Compliance:     {summary['safety_policy_compliance_rate']}")
     print(f"  🔒 Escaped Defect Rate:            {summary['escaped_defects_rate']}")

@@ -14,12 +14,12 @@ Executes within the CI/CD runner environment (e.g. GitHub Actions runner):
 5. Returns exit code matching test suite status.
 """
 
-import sys
+import argparse
 import os
 import subprocess
-import argparse
-import json
+import sys
 import time
+
 import psutil
 
 # Ensure python path includes repository root
@@ -51,14 +51,16 @@ def get_git_changed_files(base_ref: str = "HEAD~1") -> list:
             elif status.startswith("R"):
                 change_type = "RENAMED"
 
-            changes.append({
-                "file_path": file_path.replace("\\", "/"),
-                "change_type": change_type,
-                "lines_added": 10,
-                "lines_deleted": 2,
-            })
+            changes.append(
+                {
+                    "file_path": file_path.replace("\\", "/"),
+                    "change_type": change_type,
+                    "lines_added": 10,
+                    "lines_deleted": 2,
+                }
+            )
         return changes
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         print(f"[Autonomous DevOps] Git diff detection failed ({e}). Proceeding with fallback.")
         return []
 
@@ -84,7 +86,7 @@ def get_commit_metadata() -> dict:
             "author_email": email or "runner@github.actions",
             "commit_message": msg or "CI Execution",
         }
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return {
             "commit_hash": f"local-{int(time.time())}",
             "author_name": "CI Runner",
@@ -120,7 +122,7 @@ def execute_test_command(command_args: list) -> tuple:
     ps_proc = None
     try:
         ps_proc = psutil.Process(process.pid)
-    except Exception:
+    except (psutil.Error, OSError):
         pass
 
     peak_memory_mb = 0.0
@@ -131,10 +133,9 @@ def execute_test_command(command_args: list) -> tuple:
             try:
                 mem = ps_proc.memory_info().rss / (1024 * 1024)
                 cpu = ps_proc.cpu_percent(interval=None)
-                if mem > peak_memory_mb:
-                    peak_memory_mb = mem
+                peak_memory_mb = max(peak_memory_mb, mem)
                 cpu_measurements.append(cpu)
-            except Exception:
+            except (psutil.Error, OSError):
                 pass
         time.sleep(0.05)
 
@@ -146,7 +147,9 @@ def execute_test_command(command_args: list) -> tuple:
 
 def main():
     parser = argparse.ArgumentParser(description="Autonomous DevOps CI Runner")
-    parser.add_argument("--api-url", default=os.getenv("OPTIMIZATION_API_URL", "http://localhost:8000"))
+    parser.add_argument(
+        "--api-url", default=os.getenv("OPTIMIZATION_API_URL", "http://localhost:8000")
+    )
     parser.add_argument("--base-ref", default="HEAD~1")
     parser.add_argument("--force-full", action="store_true", help="Manually force full test suite")
     parser.add_argument("--repo-name", default="AutonomousDevOps/CI-CD-PIPELINE")
@@ -187,7 +190,7 @@ def main():
         try:
             print(f"🔍 Requesting execution plan from: {args.api_url} ...")
             plan = request_plan_from_api(args.api_url, payload)
-        except Exception as e:
+        except (httpx.HTTPError, RuntimeError, OSError) as e:
             print(f"⚠️  [Safety Rule 19 Triggered] API unreachable or error ({e}).")
             print("🛡️  Enforcing MANDATORY FULL-SUITE FALLBACK for guaranteed safety.")
             plan = {
@@ -195,7 +198,7 @@ def main():
                 "decision_reason": f"Safety Rule 19: Optimization API unreachable ({e})",
                 "is_optimized": False,
                 "fallback_triggered": True,
-                "fallback_reason": f"Safety Rule 19: Optimization API unreachable",
+                "fallback_reason": "Safety Rule 19: Optimization API unreachable",
                 "selected_tests": [],
                 "pytest_command": "python -m pytest tests/ tests_sample_app/ -v",
                 "selected_tests_count": 0,
@@ -207,7 +210,9 @@ def main():
                 "triggered_safety_rules": ["RULE_19_API_UNREACHABLE"],
             }
     else:
-        reason = "Manual override (--force-full)" if args.force_full else "No changed files detected"
+        reason = (
+            "Manual override (--force-full)" if args.force_full else "No changed files detected"
+        )
         plan = {
             "decision": "FULL_SUITE",
             "decision_reason": reason,
@@ -260,9 +265,13 @@ def main():
                 "total_duration_sec": duration_sec,
                 "status": "SUCCESS" if returncode == 0 else "FAILED",
             }
-            httpx.post(f"{args.api_url.rstrip('/')}/api/v1/telemetry/record", json=telemetry_payload, timeout=5.0)
+            httpx.post(
+                f"{args.api_url.rstrip('/')}/api/v1/telemetry/record",
+                json=telemetry_payload,
+                timeout=5.0,
+            )
             print("📡 Execution telemetry reported to backend.")
-        except Exception as e:
+        except (httpx.HTTPError, OSError) as e:
             print(f"⚠️  Failed to record telemetry to backend: {e}")
 
     print("\n" + "=" * 70)

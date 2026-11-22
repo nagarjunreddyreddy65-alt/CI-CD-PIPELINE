@@ -2,16 +2,12 @@
 Tests for SQLAlchemy Relational Models and Entity Relationships.
 """
 
-from datetime import datetime, timezone
 from app.database.models import (
-    Repository,
-    Commit,
-    PipelineRun,
-    ExecutionPlan,
     AuditLog,
-    ChangedFile,
-    TestCase,
-    TestResult,
+    Commit,
+    ExecutionPlan,
+    PipelineRun,
+    Repository,
 )
 
 

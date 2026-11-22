@@ -1,6 +1,7 @@
 """Unit tests for sample_app.services.user_service."""
 
 import pytest
+
 from sample_app.services.user_service import UserService
 
 

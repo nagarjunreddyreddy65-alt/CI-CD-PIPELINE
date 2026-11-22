@@ -3,16 +3,14 @@ Analysis API Routes.
 Exposes endpoints for code change analysis and AST dependency graph queries.
 """
 
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
 import os
 
-from app.core.config import settings
-from app.analysis.change_analyzer import ChangeAnalyzer
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
 from app.analysis.dependency_analyzer import ASTDependencyAnalyzer
 from app.analysis.test_mapper import TestDependencyMapper
-from app.api.dependencies import verify_runner_token
+from app.core.security import verify_runner_token
 
 router = APIRouter(prefix="/analysis", tags=["Code & AST Dependency Analysis"])
 
@@ -22,12 +20,12 @@ class FileChangeItem(BaseModel):
     change_type: str = Field(default="MODIFIED", description="ADDED | MODIFIED | DELETED | RENAMED")
     lines_added: int = Field(default=0, ge=0)
     lines_deleted: int = 0
-    old_path: Optional[str] = None
+    old_path: str | None = None
 
 
 class DiffAnalysisRequest(BaseModel):
-    repository_path: Optional[str] = Field(default=".", description="Path to repository root")
-    files: List[FileChangeItem] = Field(..., description="List of changed files in commit/PR")
+    repository_path: str | None = Field(default=".", description="Path to repository root")
+    files: list[FileChangeItem] = Field(..., description="List of changed files in commit/PR")
 
 
 @router.post(
@@ -35,7 +33,10 @@ class DiffAnalysisRequest(BaseModel):
     summary="Analyze Code Diff and Map Dependencies",
     description="Processes file changes, checks deterministic safety rules, and maps affected tests.",
 )
-def analyze_diff(payload: DiffAnalysisRequest):
+def analyze_diff(
+    payload: DiffAnalysisRequest,
+    _authorized: bool = Depends(verify_runner_token),
+):
     """Analyzes commit diff and maps downstream test dependencies."""
     root_dir = os.path.abspath(payload.repository_path)
     if not os.path.exists(root_dir):
@@ -77,5 +78,5 @@ def get_graph_summary():
         "total_dependencies": graph.graph.number_of_edges(),
         "dynamic_imports_count": len(graph.dynamic_imports_detected),
         "parsing_errors_count": len(graph.parsing_errors),
-        "modules": sorted(list(graph.graph.nodes())),
+        "modules": sorted(graph.graph.nodes()),
     }

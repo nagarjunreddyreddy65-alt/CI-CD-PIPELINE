@@ -3,10 +3,13 @@ Health and System Readiness Endpoints.
 Provides live health checks, database readiness status, and platform metadata.
 """
 
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.database.session import get_db
 
@@ -26,7 +29,7 @@ def get_health():
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
     }
 
 
@@ -43,8 +46,8 @@ def get_readiness(db: Session = Depends(get_db)):
     try:
         # Run a simple, fast query to test database connectivity
         db.execute(text("SELECT 1"))
-    except Exception as e:
-        db_status = f"DISCONNECTED: {str(e)}"
+    except (SQLAlchemyError, OSError) as e:
+        db_status = f"DISCONNECTED: {e!s}"
 
     is_ready = "CONNECTED" in db_status
 
@@ -53,5 +56,5 @@ def get_readiness(db: Session = Depends(get_db)):
         "database_status": db_status,
         "database_type": db_type,
         "fallback_active": settings.USE_SQLITE_FALLBACK and "SQLite" in db_type,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
     }

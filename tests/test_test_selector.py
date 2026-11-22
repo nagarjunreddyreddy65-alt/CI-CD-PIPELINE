@@ -2,8 +2,7 @@
 Unit Tests for Test Selector and Reduction Telemetry.
 """
 
-import pytest
-from app.optimization.test_selector import TestSelector, SelectedTestPlan
+from app.optimization.test_selector import SelectedTestPlan, TestSelector
 
 
 def test_reduction_percentage_calculation():

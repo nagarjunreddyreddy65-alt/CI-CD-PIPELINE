@@ -4,11 +4,10 @@ Exposes endpoints for pipeline failure risk assessment, runtime prediction,
 and model training/registration.
 """
 
-from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.ml.feature_extractor import FeatureExtractor, PipelineFeatures
+from app.ml.feature_extractor import FeatureExtractor
 from app.ml.model_manager import ModelManager
 
 router = APIRouter(prefix="/predictions", tags=["Machine Learning Predictions"])
@@ -30,7 +29,9 @@ class PredictRequest(BaseModel):
 
 
 class TrainRequest(BaseModel):
-    n_samples: int = Field(default=50, ge=15, description="Number of bootstrap training samples (min 15)")
+    n_samples: int = Field(
+        default=50, ge=15, description="Number of bootstrap training samples (min 15)"
+    )
 
 
 @router.post(
@@ -88,10 +89,10 @@ def train_models(payload: TrainRequest):
             "success": True,
             "data": result,
         }
-    except Exception as e:
+    except (ValueError, OSError, RuntimeError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Model training failed: {str(e)}",
+            detail=f"Model training failed: {e!s}",
         )
 
 

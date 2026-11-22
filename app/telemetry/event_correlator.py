@@ -10,11 +10,11 @@ Groups and correlates related pipeline failures using:
 Provides explainable root-cause grouping without unneeded deep learning.
 """
 
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone, timedelta
-import re
 import hashlib
+import re
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from typing import Any
 
 
 @dataclass
@@ -25,7 +25,7 @@ class FailureEvent:
     workflow_name: str
     error_message: str
     timestamp: datetime
-    test_identifier: Optional[str] = None
+    test_identifier: str | None = None
 
 
 @dataclass
@@ -35,14 +35,14 @@ class CorrelatedEventGroup:
     repository: str
     workflow_name: str
     occurrence_count: int
-    affected_commits: List[str]
-    affected_tests: List[str]
+    affected_commits: list[str]
+    affected_tests: list[str]
     first_seen: str
     last_seen: str
     is_systemic: bool
     description: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -88,7 +88,7 @@ class EventCorrelator:
         first_line = msg.splitlines()[0] if msg else "GenericPipelineFailure"
         return first_line[:80].strip()
 
-    def correlate_events(self, events: List[FailureEvent]) -> List[CorrelatedEventGroup]:
+    def correlate_events(self, events: list[FailureEvent]) -> list[CorrelatedEventGroup]:
         """
         Groups events by (repository, failure_signature) within the sliding time window.
         """
@@ -97,10 +97,10 @@ class EventCorrelator:
 
         # Sort chronologically
         sorted_events = sorted(events, key=lambda e: e.timestamp)
-        groups: List[CorrelatedEventGroup] = []
+        groups: list[CorrelatedEventGroup] = []
 
         # Map by key: (repository, signature)
-        clusters: Dict[str, List[FailureEvent]] = {}
+        clusters: dict[str, list[FailureEvent]] = {}
 
         for evt in sorted_events:
             sig = self.normalize_failure_signature(evt.error_message)
@@ -112,38 +112,40 @@ class EventCorrelator:
         # Build correlated groups
         for key, cluster in clusters.items():
             repo, sig = key.split("::", 1)
-            commits = sorted(list({e.commit_hash for e in cluster}))
-            tests = sorted(list({e.test_identifier for e in cluster if e.test_identifier}))
-            workflows = sorted(list({e.workflow_name for e in cluster}))
+            commits = sorted({e.commit_hash for e in cluster})
+            tests = sorted({e.test_identifier for e in cluster if e.test_identifier})
+            workflows = sorted({e.workflow_name for e in cluster})
 
             first_seen_dt = cluster[0].timestamp
             last_seen_dt = cluster[-1].timestamp
 
             # Deterministic group hash
             raw_hash = f"{repo}_{sig}_{first_seen_dt.isoformat()}"
-            group_id = hashlib.md5(raw_hash.encode("utf-8")).hexdigest()[:12]
+            group_id = hashlib.sha256(raw_hash.encode("utf-8")).hexdigest()[:12]
 
             # Systemic if multiple commits or multiple workflows experienced the exact same error
             is_systemic = len(commits) > 1 or len(workflows) > 1
 
             desc = (
                 f"Systemic failure: '{sig}' observed {len(cluster)} times across {len(commits)} commits."
-                if is_systemic else
-                f"Isolated failure: '{sig}' observed {len(cluster)} time(s) in commit {commits[0][:8]}."
+                if is_systemic
+                else f"Isolated failure: '{sig}' observed {len(cluster)} time(s) in commit {commits[0][:8]}."
             )
 
-            groups.append(CorrelatedEventGroup(
-                group_id=group_id,
-                failure_signature=sig,
-                repository=repo,
-                workflow_name=", ".join(workflows),
-                occurrence_count=len(cluster),
-                affected_commits=commits,
-                affected_tests=tests,
-                first_seen=first_seen_dt.isoformat(),
-                last_seen=last_seen_dt.isoformat(),
-                is_systemic=is_systemic,
-                description=desc,
-            ))
+            groups.append(
+                CorrelatedEventGroup(
+                    group_id=group_id,
+                    failure_signature=sig,
+                    repository=repo,
+                    workflow_name=", ".join(workflows),
+                    occurrence_count=len(cluster),
+                    affected_commits=commits,
+                    affected_tests=tests,
+                    first_seen=first_seen_dt.isoformat(),
+                    last_seen=last_seen_dt.isoformat(),
+                    is_systemic=is_systemic,
+                    description=desc,
+                )
+            )
 
         return groups

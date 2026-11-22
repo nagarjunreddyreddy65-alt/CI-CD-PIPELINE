@@ -3,22 +3,18 @@ Unit Tests for Security Scanners (Bandit, pip-audit, Gitleaks).
 Verifies parsing, privacy-aware secret redaction, and release blocking policy.
 """
 
-import pytest
 from app.security.scanner import (
     BanditParser,
-    PipAuditParser,
     GitleaksParser,
+    PipAuditParser,
+    ScanStatus,
     SecurityScanner,
     SecuritySeverity,
-    ScanStatus,
 )
 
 
 def test_bandit_parser_clean():
-    raw = {
-        "results": [],
-        "metrics": {"_totals": {"loc": 500}}
-    }
+    raw = {"results": [], "metrics": {"_totals": {"loc": 500}}}
     result = BanditParser.parse(raw)
     assert result.status == ScanStatus.PASSED
     assert result.findings_count == 0
@@ -62,7 +58,7 @@ def test_pip_audit_parser_vulnerabilities():
                         "description": "Remote code execution flaw in parser",
                         "fix_versions": ["1.0.1"],
                     }
-                ]
+                ],
             }
         ]
     }

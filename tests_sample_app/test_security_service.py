@@ -1,7 +1,7 @@
 """Unit tests for sample_app.auth.security_service (Sensitive Auth Module)."""
 
 import pytest
-import time
+
 from sample_app.auth.security_service import SecurityService
 
 

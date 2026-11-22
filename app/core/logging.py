@@ -6,8 +6,6 @@ Ensures sensitive tokens, passwords, and keys never leak into logs or telemetry.
 import logging
 import re
 import sys
-from typing import Any, Dict
-
 
 # Regex patterns matching sensitive credentials, tokens, and keys
 SENSITIVE_PATTERNS = [

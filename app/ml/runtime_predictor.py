@@ -3,20 +3,19 @@ Pipeline Runtime Duration Predictor.
 Implements a Random Forest Regressor to forecast expected test execution time in seconds.
 """
 
-from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass
-from datetime import datetime, timezone
-import numpy as np
-import math
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
+from datetime import UTC, datetime
+from typing import Any
 
-from app.ml.feature_extractor import PipelineFeatures
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 
 
 @dataclass
 class RuntimePredictionResult:
     """Output prediction data from RuntimePredictor."""
+
     predicted_duration_sec: float
     confidence_interval_low_sec: float
     confidence_interval_high_sec: float
@@ -44,7 +43,7 @@ class RuntimePredictor:
         )
         self.is_trained = False
 
-    def train(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    def train(self, X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
         """
         Trains the regressor and computes regression evaluation metrics.
         X: 2D array of shape (N, 10)
@@ -67,12 +66,12 @@ class RuntimePredictor:
             "mae": round(mae, 4),
             "rmse": round(rmse, 4),
             "r2_score": round(max(0.0, r2), 4),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     def predict(self, features: Any) -> RuntimePredictionResult:
         """Predicts execution duration in seconds with an estimated uncertainty band."""
-        now_utc = datetime.now(timezone.utc).isoformat()
+        now_utc = datetime.now(UTC).isoformat()
 
         if isinstance(features, np.ndarray):
             arr = features.flatten()

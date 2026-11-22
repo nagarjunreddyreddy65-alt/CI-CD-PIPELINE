@@ -4,17 +4,16 @@ Provides endpoints to ingest runtime telemetry, detect performance anomalies,
 and correlate systemic failure events.
 """
 
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
 
+from app.database.models import PipelineRun, Telemetry
 from app.database.session import get_db
-from app.database.models import Telemetry, PipelineRun
-from app.telemetry.collector import TelemetryCollector
-from app.telemetry.anomaly_detector import StatisticalAnomalyDetector, AnomalyReport
-from app.telemetry.event_correlator import EventCorrelator, FailureEvent, CorrelatedEventGroup
+from app.telemetry.anomaly_detector import AnomalyReport, StatisticalAnomalyDetector
+from app.telemetry.event_correlator import CorrelatedEventGroup, EventCorrelator, FailureEvent
 
 router = APIRouter(prefix="/telemetry", tags=["Telemetry & Observability"])
 
@@ -25,24 +24,28 @@ class TelemetryRecordRequest(BaseModel):
     memory_mb_peak: float = Field(..., ge=0.0, json_schema_extra={"example": 185.2})
     disk_io_mb: float = Field(0.0, ge=0.0, json_schema_extra={"example": 12.4})
     runner_os: str = Field("Ubuntu-Latest", json_schema_extra={"example": "Ubuntu-Latest"})
-    total_duration_sec: Optional[float] = Field(None, ge=0.0, json_schema_extra={"example": 18.5})
-    status: Optional[str] = Field("SUCCESS", json_schema_extra={"example": "SUCCESS"})
+    total_duration_sec: float | None = Field(None, ge=0.0, json_schema_extra={"example": 18.5})
+    status: str | None = Field("SUCCESS", json_schema_extra={"example": "SUCCESS"})
 
 
 class AnomalyDetectionRequest(BaseModel):
-    current_run: Dict[str, float] = Field(
+    current_run: dict[str, float] = Field(
         ...,
-        json_schema_extra={"example": {"duration_sec": 45.0, "memory_mb_peak": 250.0, "cpu_percent_avg": 85.0}}
+        json_schema_extra={
+            "example": {"duration_sec": 45.0, "memory_mb_peak": 250.0, "cpu_percent_avg": 85.0}
+        },
     )
-    historical_runs: Optional[List[Dict[str, float]]] = Field(
+    historical_runs: list[dict[str, float]] | None = Field(
         None,
-        json_schema_extra={"example": [
-            {"duration_sec": 12.0, "memory_mb_peak": 120.0, "cpu_percent_avg": 35.0},
-            {"duration_sec": 14.5, "memory_mb_peak": 125.0, "cpu_percent_avg": 38.0},
-            {"duration_sec": 13.0, "memory_mb_peak": 118.0, "cpu_percent_avg": 34.0},
-            {"duration_sec": 15.0, "memory_mb_peak": 130.0, "cpu_percent_avg": 40.0},
-            {"duration_sec": 13.5, "memory_mb_peak": 122.0, "cpu_percent_avg": 36.0},
-        ]}
+        json_schema_extra={
+            "example": [
+                {"duration_sec": 12.0, "memory_mb_peak": 120.0, "cpu_percent_avg": 35.0},
+                {"duration_sec": 14.5, "memory_mb_peak": 125.0, "cpu_percent_avg": 38.0},
+                {"duration_sec": 13.0, "memory_mb_peak": 118.0, "cpu_percent_avg": 34.0},
+                {"duration_sec": 15.0, "memory_mb_peak": 130.0, "cpu_percent_avg": 40.0},
+                {"duration_sec": 13.5, "memory_mb_peak": 122.0, "cpu_percent_avg": 36.0},
+            ]
+        },
     )
 
 
@@ -52,11 +55,11 @@ class FailureEventItem(BaseModel):
     commit_hash: str
     workflow_name: str
     error_message: str
-    test_identifier: Optional[str] = None
+    test_identifier: str | None = None
 
 
 class CorrelationRequest(BaseModel):
-    events: List[FailureEventItem]
+    events: list[FailureEventItem]
     time_window_seconds: int = Field(3600, ge=60, le=86400)
 
 
@@ -76,7 +79,7 @@ def record_telemetry(
         if req.status:
             run.status = req.status
             if req.status in ("SUCCESS", "FAILED"):
-                run.completed_at = datetime.now(timezone.utc)
+                run.completed_at = datetime.now(UTC)
 
     # 2. Upsert telemetry record
     existing = db.query(Telemetry).filter(Telemetry.pipeline_run_id == req.pipeline_run_id).first()
@@ -125,7 +128,13 @@ def detect_anomalies(
     hist_data = req.historical_runs
     if not hist_data:
         # Query recent telemetry from DB
-        recent_telemetry = db.query(Telemetry).join(PipelineRun).order_by(Telemetry.collected_at.desc()).limit(20).all()
+        recent_telemetry = (
+            db.query(Telemetry)
+            .join(PipelineRun)
+            .order_by(Telemetry.collected_at.desc())
+            .limit(20)
+            .all()
+        )
         hist_data = [
             {
                 "duration_sec": t.pipeline_run.total_duration_sec if t.pipeline_run else 15.0,
@@ -173,13 +182,13 @@ def correlate_failures(req: CorrelationRequest):
             commit_hash=item.commit_hash,
             workflow_name=item.workflow_name,
             error_message=item.error_message,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             test_identifier=item.test_identifier,
         )
         for item in req.events
     ]
 
-    groups: List[CorrelatedEventGroup] = correlator.correlate_events(events)
+    groups: list[CorrelatedEventGroup] = correlator.correlate_events(events)
 
     return {
         "correlated_groups_count": len(groups),

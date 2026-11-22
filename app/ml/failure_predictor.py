@@ -4,22 +4,22 @@ Implements a Random Forest Classifier to estimate pipeline failure probability
 and classification, accounting for class imbalance.
 """
 
-from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
+
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
-
-from app.ml.feature_extractor import PipelineFeatures
+from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
 
 
 @dataclass
 class FailurePredictionResult:
     """Output prediction data from FailurePredictor."""
+
     predicted_failure_probability: float  # 0.0 to 1.0
-    predicted_failure_class: int          # 0: Pass, 1: Fail
-    confidence: float                     # Distance from decision boundary [0.5, 1.0]
+    predicted_failure_class: int  # 0: Pass, 1: Fail
+    confidence: float  # Distance from decision boundary [0.5, 1.0]
     is_high_risk: bool
     model_version: str
     prediction_timestamp: str
@@ -49,7 +49,7 @@ class FailurePredictor:
         )
         self.is_trained = False
 
-    def train(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    def train(self, X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
         """
         Trains the classifier and calculates evaluation metrics.
         X: 2D array of shape (N, 10)
@@ -63,7 +63,9 @@ class FailurePredictor:
 
         # In-sample evaluation
         y_pred = self.model.predict(X)
-        y_prob = self.model.predict_proba(X)[:, 1] if len(self.model.classes_) > 1 else np.zeros(len(y))
+        y_prob = (
+            self.model.predict_proba(X)[:, 1] if len(self.model.classes_) > 1 else np.zeros(len(y))
+        )
 
         prec = float(precision_score(y, y_pred, zero_division=0))
         rec = float(recall_score(y, y_pred, zero_division=0))
@@ -72,7 +74,7 @@ class FailurePredictor:
 
         try:
             auc = float(roc_auc_score(y, y_prob)) if len(np.unique(y)) > 1 else 1.0
-        except Exception:
+        except ValueError:
             auc = 0.5
 
         return {
@@ -83,12 +85,12 @@ class FailurePredictor:
             "f1_score": round(f1, 4),
             "roc_auc": round(auc, 4),
             "confusion_matrix": cm,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     def predict(self, features: Any) -> FailurePredictionResult:
         """Generates failure probability and risk classification for incoming features."""
-        now_utc = datetime.now(timezone.utc).isoformat()
+        now_utc = datetime.now(UTC).isoformat()
 
         if isinstance(features, np.ndarray):
             arr = features.flatten()

@@ -3,10 +3,12 @@ Unit tests for ASTDependencyAnalyzer.
 Verifies AST parsing, dynamic import detection, and NetworkX dependency graph traversal.
 """
 
-import pytest
 import os
 import tempfile
-from app.analysis.dependency_analyzer import ASTDependencyAnalyzer, DependencyGraph
+
+import pytest
+
+from app.analysis.dependency_analyzer import ASTDependencyAnalyzer
 
 
 @pytest.fixture
@@ -48,7 +50,7 @@ dyn = importlib.import_module('secret_module')
         temp_path = f.name
 
     try:
-        imports, dynamic = analyzer.parse_python_file(temp_path, "dyn_mod")
+        _imports, dynamic = analyzer.parse_python_file(temp_path, "dyn_mod")
         assert len(dynamic) == 3
         types = [d["type"] for d in dynamic]
         assert "__import__" in types

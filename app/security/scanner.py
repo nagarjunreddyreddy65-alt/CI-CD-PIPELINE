@@ -8,14 +8,13 @@ Security Policy:
 3. Every finding records tool name, severity, summary, and location.
 """
 
-from enum import Enum
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
 import json
-import re
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any
 
-from app.core.logging import redact_secrets, logger
+from app.core.logging import redact_secrets
 
 
 class SecuritySeverity(str, Enum):
@@ -33,7 +32,7 @@ class ScanStatus(str, Enum):
 
 
 # Numerical mapping for severity comparisons
-SEVERITY_ORDER: Dict[SecuritySeverity, int] = {
+SEVERITY_ORDER: dict[SecuritySeverity, int] = {
     SecuritySeverity.NONE: 0,
     SecuritySeverity.LOW: 1,
     SecuritySeverity.MEDIUM: 2,
@@ -49,11 +48,11 @@ class SecurityFinding:
     rule_id: str
     title: str
     description: str
-    file_path: Optional[str] = None
-    line_number: Optional[int] = None
-    redacted_snippet: Optional[str] = None
+    file_path: str | None = None
+    line_number: int | None = None
+    redacted_snippet: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["severity"] = self.severity.value
         return data
@@ -65,12 +64,12 @@ class ScanResult:
     status: ScanStatus
     highest_severity: SecuritySeverity
     findings_count: int
-    findings: List[SecurityFinding]
+    findings: list[SecurityFinding]
     summary: str
     should_block_release: bool
-    executed_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    executed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tool_name": self.tool_name,
             "status": self.status.value,
@@ -91,7 +90,7 @@ class BanditParser:
         if isinstance(raw_json, str):
             try:
                 data = json.loads(raw_json)
-            except Exception as e:
+            except (json.JSONDecodeError, TypeError, ValueError) as e:
                 return ScanResult(
                     tool_name="Bandit",
                     status=ScanStatus.FAILED,
@@ -105,7 +104,7 @@ class BanditParser:
             data = raw_json or {}
 
         results = data.get("results", [])
-        findings: List[SecurityFinding] = []
+        findings: list[SecurityFinding] = []
         highest_sev = SecuritySeverity.NONE
 
         for item in results:
@@ -121,16 +120,18 @@ class BanditParser:
             snippet = item.get("code")
             redacted_code = redact_secrets(snippet) if snippet else None
 
-            findings.append(SecurityFinding(
-                tool_name="Bandit",
-                severity=sev,
-                rule_id=str(item.get("test_id", "B000")),
-                title=str(item.get("issue_text", "Static analysis security issue")),
-                description=f"{item.get('test_name', '')}: {item.get('issue_text', '')}",
-                file_path=item.get("filename"),
-                line_number=item.get("line_number"),
-                redacted_snippet=redacted_code,
-            ))
+            findings.append(
+                SecurityFinding(
+                    tool_name="Bandit",
+                    severity=sev,
+                    rule_id=str(item.get("test_id", "B000")),
+                    title=str(item.get("issue_text", "Static analysis security issue")),
+                    description=f"{item.get('test_name', '')}: {item.get('issue_text', '')}",
+                    file_path=item.get("filename"),
+                    line_number=item.get("line_number"),
+                    redacted_snippet=redacted_code,
+                )
+            )
 
         should_block = SEVERITY_ORDER[highest_sev] >= SEVERITY_ORDER[SecuritySeverity.HIGH]
         status = ScanStatus.PASSED
@@ -139,7 +140,9 @@ class BanditParser:
         elif len(findings) > 0:
             status = ScanStatus.WARNING
 
-        summary = f"Bandit scan identified {len(findings)} issues. Highest severity: {highest_sev.value}."
+        summary = (
+            f"Bandit scan identified {len(findings)} issues. Highest severity: {highest_sev.value}."
+        )
         return ScanResult(
             tool_name="Bandit",
             status=status,
@@ -159,7 +162,7 @@ class PipAuditParser:
         if isinstance(raw_json, str):
             try:
                 data = json.loads(raw_json)
-            except Exception as e:
+            except (json.JSONDecodeError, TypeError, ValueError) as e:
                 return ScanResult(
                     tool_name="pip-audit",
                     status=ScanStatus.FAILED,
@@ -174,7 +177,7 @@ class PipAuditParser:
 
         # pip-audit outputs a list of dependencies or a dict with "dependencies"
         dependencies = data if isinstance(data, list) else data.get("dependencies", [])
-        findings: List[SecurityFinding] = []
+        findings: list[SecurityFinding] = []
         highest_sev = SecuritySeverity.NONE
 
         for dep in dependencies:
@@ -193,16 +196,18 @@ class PipAuditParser:
                 if SEVERITY_ORDER[sev] > SEVERITY_ORDER[highest_sev]:
                     highest_sev = sev
 
-                findings.append(SecurityFinding(
-                    tool_name="pip-audit",
-                    severity=sev,
-                    rule_id=vuln_id,
-                    title=f"Vulnerable package: {name}=={version}",
-                    description=f"{desc}. Fix available in: {', '.join(fix_vers) if fix_vers else 'None'}",
-                    file_path="requirements.txt",
-                    line_number=None,
-                    redacted_snippet=f"{name}=={version}",
-                ))
+                findings.append(
+                    SecurityFinding(
+                        tool_name="pip-audit",
+                        severity=sev,
+                        rule_id=vuln_id,
+                        title=f"Vulnerable package: {name}=={version}",
+                        description=f"{desc}. Fix available in: {', '.join(fix_vers) if fix_vers else 'None'}",
+                        file_path="requirements.txt",
+                        line_number=None,
+                        redacted_snippet=f"{name}=={version}",
+                    )
+                )
 
         should_block = SEVERITY_ORDER[highest_sev] >= SEVERITY_ORDER[SecuritySeverity.HIGH]
         status = ScanStatus.PASSED
@@ -231,12 +236,12 @@ class GitleaksParser:
         if isinstance(raw_json, str):
             try:
                 data = json.loads(raw_json)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 data = []
         else:
             data = raw_json or []
 
-        findings: List[SecurityFinding] = []
+        findings: list[SecurityFinding] = []
         highest_sev = SecuritySeverity.NONE
 
         for item in data:
@@ -250,16 +255,18 @@ class GitleaksParser:
             start_line = item.get("StartLine")
 
             # CRITICAL PRIVACY: Never record the raw secret!
-            findings.append(SecurityFinding(
-                tool_name="Gitleaks",
-                severity=sev,
-                rule_id=rule_id,
-                title=f"Secret leak: {desc}",
-                description=f"Secret detected in {file_path} at line {start_line}",
-                file_path=file_path,
-                line_number=start_line,
-                redacted_snippet="[REDACTED_SECRET]",
-            ))
+            findings.append(
+                SecurityFinding(
+                    tool_name="Gitleaks",
+                    severity=sev,
+                    rule_id=rule_id,
+                    title=f"Secret leak: {desc}",
+                    description=f"Secret detected in {file_path} at line {start_line}",
+                    file_path=file_path,
+                    line_number=start_line,
+                    redacted_snippet="[REDACTED_SECRET]",
+                )
+            )
 
         should_block = len(findings) > 0
         status = ScanStatus.FAILED if should_block else ScanStatus.PASSED

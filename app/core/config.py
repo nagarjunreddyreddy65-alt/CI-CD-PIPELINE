@@ -3,8 +3,6 @@ Application Configuration using Pydantic Settings.
 Centralizes environment variables, safety thresholds, and system flags.
 """
 
-from typing import List, Optional
-import os
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,14 +17,18 @@ class Settings(BaseSettings):
     )
 
     # Application metadata
-    PROJECT_NAME: str = "Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization"
+    PROJECT_NAME: str = (
+        "Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization"
+    )
     VERSION: str = "1.0.0"
-    ENVIRONMENT: str = Field(default="development", description="development | testing | production")
+    ENVIRONMENT: str = Field(
+        default="development", description="development | testing | production"
+    )
     DEBUG: bool = Field(default=True, description="Enable debug mode")
     API_V1_PREFIX: str = "/api/v1"
 
     # Server binding
-    HOST: str = "0.0.0.0"
+    HOST: str = "127.0.0.1"
     PORT: int = 8000
 
     # Security
@@ -38,7 +40,7 @@ class Settings(BaseSettings):
         default="autonomous_devops_runner_dev_api_key_2026",
         description="Pre-shared key used by isolated GitHub Actions runners",
     )
-    GITHUB_WEBHOOK_SECRET: Optional[str] = "autonomous_devops_webhook_dev_secret"
+    GITHUB_WEBHOOK_SECRET: str | None = "autonomous_devops_webhook_dev_secret"
 
     # Database configuration
     DATABASE_URL: str = Field(
@@ -71,7 +73,7 @@ class Settings(BaseSettings):
     BLOCK_ON_SECURITY_SEVERITY: str = "HIGH"
 
     # CORS Allowed Origins
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: list[str] = [
         "http://localhost:8000",
         "http://127.0.0.1:8000",
         "http://localhost:3000",

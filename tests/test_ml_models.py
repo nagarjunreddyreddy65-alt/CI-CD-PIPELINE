@@ -3,10 +3,10 @@ Unit tests for FailurePredictor and RuntimePredictor.
 Verifies Random Forest Classifier and Regressor training, metrics, and inference.
 """
 
-import pytest
 import numpy as np
-from app.ml.feature_extractor import FeatureExtractor
+
 from app.ml.failure_predictor import FailurePredictor
+from app.ml.feature_extractor import FeatureExtractor
 from app.ml.runtime_predictor import RuntimePredictor
 
 
@@ -89,4 +89,8 @@ def test_runtime_predictor_training_and_inference():
     res = predictor.predict(features)
 
     assert res.predicted_duration_sec > 0.0
-    assert res.confidence_interval_low_sec <= res.predicted_duration_sec <= res.confidence_interval_high_sec
+    assert (
+        res.confidence_interval_low_sec
+        <= res.predicted_duration_sec
+        <= res.confidence_interval_high_sec
+    )

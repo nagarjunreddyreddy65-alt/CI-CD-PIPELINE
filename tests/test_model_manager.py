@@ -3,10 +3,12 @@ Unit tests for ModelManager.
 Verifies model persistence, artifact loading, and Safety Rule 17 (minimum training samples).
 """
 
-import pytest
 import os
-import tempfile
 import shutil
+import tempfile
+
+import pytest
+
 from app.ml.model_manager import ModelManager
 
 
@@ -24,7 +26,7 @@ def test_synthetic_data_generation(temp_manager):
     assert X.shape == (40, 10)
     assert len(y_fail) == 40
     assert len(y_time) == 40
-    assert set(np_unique := set(y_fail)).issubset({0, 1})
+    assert set(y_fail).issubset({0, 1})
     assert all(t > 0 for t in y_time)
 
 

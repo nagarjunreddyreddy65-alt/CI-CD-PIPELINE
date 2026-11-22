@@ -4,7 +4,8 @@ Verifies that all 7 dashboard views and aggregation APIs render successfully.
 """
 
 import pytest
-from app.database.models import Repository, Commit, PipelineRun, ExecutionPlan
+
+from app.database.models import Commit, ExecutionPlan, PipelineRun, Repository
 
 
 @pytest.fixture(autouse=True)

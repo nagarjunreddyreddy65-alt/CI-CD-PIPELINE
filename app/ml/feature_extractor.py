@@ -4,14 +4,16 @@ Extracts numerical and categorical features strictly available BEFORE pipeline e
 Never incorporates post-execution metrics (current duration, current pass/fail) into feature vectors.
 """
 
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+from typing import Any, ClassVar
+
 import numpy as np
 
 
 @dataclass
 class PipelineFeatures:
     """Pre-execution feature vector for ML model inference."""
+
     changed_files_count: int
     lines_added: int
     lines_deleted: int
@@ -25,20 +27,23 @@ class PipelineFeatures:
 
     def to_array(self) -> np.ndarray:
         """Converts feature object to 2D numpy array suitable for scikit-learn models."""
-        return np.array([
-            self.changed_files_count,
-            self.lines_added,
-            self.lines_deleted,
-            self.total_lines_changed,
-            self.affected_modules_count,
-            self.selected_tests_count,
-            self.is_sensitive_change,
-            self.has_test_file_changes,
-            self.historical_failure_rate,
-            self.previous_execution_duration,
-        ], dtype=np.float64).reshape(1, -1)
+        return np.array(
+            [
+                self.changed_files_count,
+                self.lines_added,
+                self.lines_deleted,
+                self.total_lines_changed,
+                self.affected_modules_count,
+                self.selected_tests_count,
+                self.is_sensitive_change,
+                self.has_test_file_changes,
+                self.historical_failure_rate,
+                self.previous_execution_duration,
+            ],
+            dtype=np.float64,
+        ).reshape(1, -1)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Converts features to JSON-serializable dictionary."""
         return asdict(self)
 
@@ -49,7 +54,7 @@ class FeatureExtractor:
     dependency mapping results, and repository historical records.
     """
 
-    FEATURE_NAMES: List[str] = [
+    FEATURE_NAMES: ClassVar[list[str]] = [
         "changed_files_count",
         "lines_added",
         "lines_deleted",

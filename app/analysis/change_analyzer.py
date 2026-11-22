@@ -4,35 +4,37 @@ Extracts changed files, classifies file types, and detects safety-sensitive modi
 (Database migrations, auth changes, billing changes, lock files, CI workflows, etc.).
 """
 
-from typing import List, Dict, Any, Optional, Set
-from dataclasses import dataclass, field
 import os
 import re
+from dataclasses import dataclass, field
+from typing import Any, ClassVar
 
 
 @dataclass
 class FileChange:
     """Represents an individual file modification in a commit or pull request."""
+
     path: str
     change_type: str  # ADDED, MODIFIED, DELETED, RENAMED
     lines_added: int = 0
     lines_deleted: int = 0
-    old_path: Optional[str] = None
+    old_path: str | None = None
     is_sensitive: bool = False
-    sensitive_category: Optional[str] = None
+    sensitive_category: str | None = None
 
 
 @dataclass
 class ChangeAnalysisResult:
     """Consolidated findings from analyzing commit file changes."""
+
     total_files_changed: int
     total_lines_added: int
     total_lines_deleted: int
-    files: List[FileChange]
-    python_files: List[str]
-    non_python_files: List[str]
-    test_files_changed: List[str]
-    sensitive_triggers: List[str] = field(default_factory=list)
+    files: list[FileChange]
+    python_files: list[str]
+    non_python_files: list[str]
+    test_files_changed: list[str]
+    sensitive_triggers: list[str] = field(default_factory=list)
     has_migration_changes: bool = False
     has_auth_changes: bool = False
     has_payment_changes: bool = False
@@ -49,20 +51,19 @@ class ChangeAnalysisResult:
     @property
     def is_sensitive(self) -> bool:
         return bool(self.sensitive_triggers) or (
-            self.has_migration_changes or
-            self.has_auth_changes or
-            self.has_payment_changes or
-            self.has_crypto_changes or
-            self.has_dependency_manifest_changes or
-            self.has_lock_file_changes or
-            self.has_ci_workflow_changes or
-            self.has_unsupported_files
+            self.has_migration_changes
+            or self.has_auth_changes
+            or self.has_payment_changes
+            or self.has_crypto_changes
+            or self.has_dependency_manifest_changes
+            or self.has_lock_file_changes
+            or self.has_ci_workflow_changes
+            or self.has_unsupported_files
         )
 
     @property
     def has_test_changes(self) -> bool:
         return len(self.test_files_changed) > 0
-
 
 
 class ChangeAnalyzer:
@@ -71,14 +72,14 @@ class ChangeAnalyzer:
     """
 
     # Sensitive path heuristics matching Part 5 Safety Policy
-    MIGRATION_PATTERNS = [
+    MIGRATION_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i)migrations/.*\.py$"),
         re.compile(r"(?i)alembic/.*\.py$"),
         re.compile(r"(?i).*\.sql$"),
         re.compile(r"(?i)app/database/models\.py$"),
     ]
 
-    AUTH_PATTERNS = [
+    AUTH_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i).*/auth/.*\.py$"),
         re.compile(r"(?i).*auth.*\.py$"),
         re.compile(r"(?i).*security.*\.py$"),
@@ -86,42 +87,42 @@ class ChangeAnalyzer:
         re.compile(r"(?i).*permission.*\.py$"),
     ]
 
-    PAYMENT_PATTERNS = [
+    PAYMENT_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i).*/billing/.*\.py$"),
         re.compile(r"(?i).*payment.*\.py$"),
         re.compile(r"(?i).*invoice.*\.py$"),
         re.compile(r"(?i).*stripe.*\.py$"),
     ]
 
-    CRYPTO_PATTERNS = [
+    CRYPTO_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i).*crypto.*\.py$"),
         re.compile(r"(?i).*cipher.*\.py$"),
         re.compile(r"(?i).*certificate.*$"),
         re.compile(r"(?i).*\.(pem|key|crt|cert)$"),
     ]
 
-    DEPENDENCY_MANIFEST_PATTERNS = [
+    DEPENDENCY_MANIFEST_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i)^requirements.*\.txt$"),
         re.compile(r"(?i)^pyproject\.toml$"),
         re.compile(r"(?i)^setup\.(py|cfg)$"),
         re.compile(r"(?i)^Pipfile$"),
     ]
 
-    LOCK_FILE_PATTERNS = [
+    LOCK_FILE_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i)^uv\.lock$"),
         re.compile(r"(?i)^poetry\.lock$"),
         re.compile(r"(?i)^Pipfile\.lock$"),
         re.compile(r"(?i)^package-lock\.json$"),
     ]
 
-    CI_WORKFLOW_PATTERNS = [
+    CI_WORKFLOW_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i)^\.github/workflows/.*\.ya?ml$"),
         re.compile(r"(?i)^Dockerfile.*$"),
         re.compile(r"(?i)^docker-compose.*\.ya?ml$"),
         re.compile(r"(?i)^\.gitlab-ci\.yml$"),
     ]
 
-    TEST_PATTERNS = [
+    TEST_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"(?i)^tests/.*\.py$"),
         re.compile(r"(?i)^tests_.*\.py$"),
         re.compile(r"(?i).*/tests/.*\.py$"),
@@ -130,17 +131,25 @@ class ChangeAnalyzer:
     ]
 
     # File extensions that can be safely parsed or handled
-    SUPPORTED_EXTENSIONS = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".toml"}
+    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {
+        ".py",
+        ".md",
+        ".txt",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+    }
 
-    def __init__(self, root_dir: Optional[str] = None):
+    def __init__(self, root_dir: str | None = None):
         self.root_dir = root_dir or os.getcwd()
 
-    def classify_file(self, file_path: str) -> Dict[str, Any]:
+    def classify_file(self, file_path: str) -> dict[str, Any]:
         """Classifies a file path for sensitivity, language, and test association."""
         norm_path = file_path.replace("\\", "/").lstrip("/")
         ext = os.path.splitext(norm_path)[1].lower()
 
-        categories: List[str] = []
+        categories: list[str] = []
 
         if any(p.search(norm_path) for p in self.MIGRATION_PATTERNS):
             categories.append("DATABASE_MIGRATION")
@@ -171,17 +180,17 @@ class ChangeAnalyzer:
             "is_unsupported": is_unsupported,
         }
 
-    def analyze_changes(self, file_entries: List[Dict[str, Any]]) -> ChangeAnalysisResult:
+    def analyze_changes(self, file_entries: list[dict[str, Any]]) -> ChangeAnalysisResult:
         """
         Analyzes a list of file changes from git diff.
         Expected entry format:
         {"path": "sample_app/utils/math_ops.py", "change_type": "MODIFIED", "lines_added": 5, "lines_deleted": 1}
         """
-        file_changes: List[FileChange] = []
-        python_files: List[str] = []
-        non_python_files: List[str] = []
-        test_files_changed: List[str] = []
-        sensitive_triggers: Set[str] = set()
+        file_changes: list[FileChange] = []
+        python_files: list[str] = []
+        non_python_files: list[str] = []
+        test_files_changed: list[str] = []
+        sensitive_triggers: set[str] = set()
 
         total_added = 0
         total_deleted = 0
@@ -247,9 +256,9 @@ class ChangeAnalyzer:
                 lines_deleted=deleted,
                 old_path=old_path,
                 is_sensitive=info["is_sensitive"] or info["is_unsupported"],
-                sensitive_category=",".join(cats) if cats else (
-                    "UNSUPPORTED" if info["is_unsupported"] else None
-                ),
+                sensitive_category=",".join(cats)
+                if cats
+                else ("UNSUPPORTED" if info["is_unsupported"] else None),
             )
             file_changes.append(change_obj)
 
@@ -261,7 +270,7 @@ class ChangeAnalyzer:
             python_files=python_files,
             non_python_files=non_python_files,
             test_files_changed=test_files_changed,
-            sensitive_triggers=sorted(list(sensitive_triggers)),
+            sensitive_triggers=sorted(sensitive_triggers),
             has_migration_changes=has_migration,
             has_auth_changes=has_auth,
             has_payment_changes=has_payment,

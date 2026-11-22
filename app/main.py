@@ -5,22 +5,24 @@ Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimiza
 
 import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.routes.analysis import router as analysis_router
+from app.api.routes.dashboard import router as dashboard_router
+from app.api.routes.health import router as health_router
+from app.api.routes.plans import router as plans_router
+from app.api.routes.predictions import router as predictions_router
+from app.api.routes.security import router as security_router
+from app.api.routes.telemetry import router as telemetry_router
 from app.core.config import settings
 from app.core.logging import logger
 from app.database.session import init_db
-from app.api.routes.health import router as health_router
-from app.api.routes.analysis import router as analysis_router
-from app.api.routes.predictions import router as predictions_router
-from app.api.routes.plans import router as plans_router
-from app.api.routes.security import router as security_router
-from app.api.routes.telemetry import router as telemetry_router
-from app.api.routes.dashboard import router as dashboard_router
 
 
 @asynccontextmanager
@@ -36,7 +38,7 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         logger.info("✅ Database schema initialized successfully.")
-    except Exception as e:
+    except (SQLAlchemyError, OSError) as e:
         logger.error(f"❌ Database initialization failed: {e}")
 
     yield
@@ -68,6 +70,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # -----------------------------------------------------------------------------
 # Global Validation Exception Handler
 # -----------------------------------------------------------------------------
@@ -76,11 +79,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = []
     for err in exc.errors():
         field_loc = " -> ".join(str(part) for part in err.get("loc", []))
-        errors.append({
-            "field": field_loc,
-            "message": err.get("msg"),
-            "type": err.get("type"),
-        })
+        errors.append(
+            {
+                "field": field_loc,
+                "message": err.get("msg"),
+                "type": err.get("type"),
+            }
+        )
 
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -130,4 +135,5 @@ app.include_router(dashboard_router)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)

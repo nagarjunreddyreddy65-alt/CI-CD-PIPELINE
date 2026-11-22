@@ -11,28 +11,24 @@ Renders responsive Jinja2 HTML5 pages with Chart.js visualizations covering:
 """
 
 import os
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Request, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
-from app.database.session import get_db, engine
+from app.core.config import settings
 from app.database.models import (
-    PipelineRun,
     ExecutionPlan,
+    PipelineRun,
     Prediction,
-    Telemetry,
     SecurityScan,
-    Repository,
-    Commit,
-    AuditLog,
+    Telemetry,
 )
+from app.database.session import get_db
 from app.ml.model_manager import ModelManager
 from app.telemetry.event_correlator import EventCorrelator, FailureEvent
-from app.core.config import settings
 
 router = APIRouter(tags=["Web Dashboard"])
 
@@ -79,21 +75,23 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
         tot_count = plan.total_tests_count if plan else 0
         dec_reason = plan.decision_reason if plan else "Standard Execution"
 
-        recent_runs.append({
-            "id": r.id,
-            "repository_name": repo_name,
-            "commit_hash": commit_hash,
-            "status": r.status,
-            "duration_sec": r.total_duration_sec,
-            "is_optimized": r.is_optimized,
-            "selected_tests": sel_count,
-            "total_tests": tot_count,
-            "decision_reason": dec_reason,
-            "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
-        })
+        recent_runs.append(
+            {
+                "id": r.id,
+                "repository_name": repo_name,
+                "commit_hash": commit_hash,
+                "status": r.status,
+                "duration_sec": r.total_duration_sec,
+                "is_optimized": r.is_optimized,
+                "selected_tests": sel_count,
+                "total_tests": tot_count,
+                "decision_reason": dec_reason,
+                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
+            }
+        )
 
     # Chart data
-    chart_labels = [f"Run {i+1}" for i in range(min(10, total_runs))]
+    chart_labels = [f"Run {i + 1}" for i in range(min(10, total_runs))]
     chart_durations = [r.total_duration_sec for r in reversed(runs[:10])]
 
     return templates.TemplateResponse(
@@ -132,22 +130,24 @@ def get_history_page(request: Request, db: Session = Depends(get_db)):
         commit = r.commit
         plan = r.execution_plan
 
-        history_runs.append({
-            "id": r.id,
-            "repository_name": repo_name,
-            "branch": commit.branch if commit else "main",
-            "commit_hash": commit.commit_hash if commit else "sha-unknown",
-            "author_name": commit.author_name if commit else "Developer",
-            "commit_message": commit.message if commit else "Commit update",
-            "status": r.status,
-            "duration_sec": r.total_duration_sec,
-            "selected_tests": plan.selected_tests_count if plan else 0,
-            "total_tests": plan.total_tests_count if plan else 0,
-            "reduction_pct": plan.tests_reduction_pct if plan else 0.0,
-            "is_optimized": r.is_optimized,
-            "decision_reason": plan.decision_reason if plan else "Standard Execution",
-            "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else "-",
-        })
+        history_runs.append(
+            {
+                "id": r.id,
+                "repository_name": repo_name,
+                "branch": commit.branch if commit else "main",
+                "commit_hash": commit.commit_hash if commit else "sha-unknown",
+                "author_name": commit.author_name if commit else "Developer",
+                "commit_message": commit.message if commit else "Commit update",
+                "status": r.status,
+                "duration_sec": r.total_duration_sec,
+                "selected_tests": plan.selected_tests_count if plan else 0,
+                "total_tests": plan.total_tests_count if plan else 0,
+                "reduction_pct": plan.tests_reduction_pct if plan else 0.0,
+                "is_optimized": r.is_optimized,
+                "decision_reason": plan.decision_reason if plan else "Standard Execution",
+                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else "-",
+            }
+        )
 
     return templates.TemplateResponse(
         request=request,
@@ -172,7 +172,7 @@ def get_ai_insights_page(request: Request, db: Session = Depends(get_db)):
     risk_values = []
 
     for i, p in enumerate(reversed(predictions)):
-        risk_labels.append(f"Pred {i+1}")
+        risk_labels.append(f"Pred {i + 1}")
         risk_values.append(p.predicted_failure_probability)
 
     for p in predictions:
@@ -180,15 +180,17 @@ def get_ai_insights_page(request: Request, db: Session = Depends(get_db)):
         commit_hash = run.commit.commit_hash if (run and run.commit) else "sha-unknown"
         actual_dur = run.total_duration_sec if run else 0.0
 
-        pred_history.append({
-            "commit_hash": commit_hash,
-            "model_version": p.model_version,
-            "failure_prob": p.predicted_failure_probability,
-            "failure_class": p.predicted_failure_class,
-            "predicted_duration_sec": p.predicted_duration_sec,
-            "actual_duration_sec": actual_dur,
-            "created_at": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "-",
-        })
+        pred_history.append(
+            {
+                "commit_hash": commit_hash,
+                "model_version": p.model_version,
+                "failure_prob": p.predicted_failure_probability,
+                "failure_class": p.predicted_failure_class,
+                "predicted_duration_sec": p.predicted_duration_sec,
+                "actual_duration_sec": actual_dur,
+                "created_at": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "-",
+            }
+        )
 
     return templates.TemplateResponse(
         request=request,
@@ -225,16 +227,18 @@ def get_optimization_page(request: Request, db: Session = Depends(get_db)):
         run = p.pipeline_run
         commit_hash = run.commit.commit_hash if (run and run.commit) else "commit-sha"
 
-        opt_plans.append({
-            "commit_hash": commit_hash,
-            "decision": p.decision,
-            "selected_tests_count": p.selected_tests_count,
-            "total_tests_count": p.total_tests_count,
-            "reduction_pct": p.tests_reduction_pct,
-            "safety_rule_triggered": p.safety_rule_triggered,
-            "decision_reason": p.decision_reason,
-            "created_at": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "-",
-        })
+        opt_plans.append(
+            {
+                "commit_hash": commit_hash,
+                "decision": p.decision,
+                "selected_tests_count": p.selected_tests_count,
+                "total_tests_count": p.total_tests_count,
+                "reduction_pct": p.tests_reduction_pct,
+                "safety_rule_triggered": p.safety_rule_triggered,
+                "decision_reason": p.decision_reason,
+                "created_at": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "-",
+            }
+        )
 
     return templates.TemplateResponse(
         request=request,
@@ -253,19 +257,23 @@ def get_security_page(request: Request, db: Session = Depends(get_db)):
     """Page E: Security & Compliance."""
     scans = db.query(SecurityScan).order_by(SecurityScan.executed_at.desc()).all()
     total_scans = len(scans)
-    blocked_releases = sum(1 for s in scans if s.status == "FAILED" or s.highest_severity in ("HIGH", "CRITICAL"))
+    blocked_releases = sum(
+        1 for s in scans if s.status == "FAILED" or s.highest_severity in ("HIGH", "CRITICAL")
+    )
     secret_leaks = sum(s.findings_count for s in scans if "gitleaks" in s.tool_name.lower())
 
     scan_records = []
     for s in scans:
-        scan_records.append({
-            "tool_name": s.tool_name,
-            "status": s.status,
-            "highest_severity": s.highest_severity,
-            "findings_count": s.findings_count,
-            "summary": s.summary,
-            "executed_at": s.executed_at.strftime("%Y-%m-%d %H:%M") if s.executed_at else "-",
-        })
+        scan_records.append(
+            {
+                "tool_name": s.tool_name,
+                "status": s.status,
+                "highest_severity": s.highest_severity,
+                "findings_count": s.findings_count,
+                "summary": s.summary,
+                "executed_at": s.executed_at.strftime("%Y-%m-%d %H:%M") if s.executed_at else "-",
+            }
+        )
 
     return templates.TemplateResponse(
         request=request,
@@ -293,7 +301,7 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
     avg_cpu = round(sum(t.cpu_percent_avg for t in telemetries) / max(1, total_records), 1)
     avg_mem = round(sum(t.memory_mb_peak for t in telemetries) / max(1, total_records), 1)
 
-    chart_labels = [f"Job {i+1}" for i in range(min(15, total_records))]
+    chart_labels = [f"Job {i + 1}" for i in range(min(15, total_records))]
     chart_cpu = [t.cpu_percent_avg for t in reversed(telemetries[:15])]
     chart_mem = [t.memory_mb_peak for t in reversed(telemetries[:15])]
 
@@ -302,14 +310,18 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
     failed_runs = db.query(PipelineRun).filter(PipelineRun.status == "FAILED").all()
     events = []
     for fr in failed_runs:
-        events.append(FailureEvent(
-            event_id=fr.id,
-            repository=fr.repository.name if fr.repository else "AutonomousDevOps/CI-CD-PIPELINE",
-            commit_hash=fr.commit.commit_hash if fr.commit else "sha",
-            workflow_name=fr.workflow_name,
-            error_message=fr.fallback_reason or "PipelineFailed",
-            timestamp=fr.created_at,
-        ))
+        events.append(
+            FailureEvent(
+                event_id=fr.id,
+                repository=fr.repository.name
+                if fr.repository
+                else "AutonomousDevOps/CI-CD-PIPELINE",
+                commit_hash=fr.commit.commit_hash if fr.commit else "sha",
+                workflow_name=fr.workflow_name,
+                error_message=fr.fallback_reason or "PipelineFailed",
+                timestamp=fr.created_at,
+            )
+        )
 
     groups = correlator.correlate_events(events)
 
@@ -351,7 +363,7 @@ def get_health_page(request: Request):
                 "db_engine": "PostgreSQL / SQLite",
                 "failure_model_version": models_status["failure_predictor"]["version"],
                 "runtime_model_version": models_status["runtime_predictor"]["version"],
-                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
             },
         },
     )

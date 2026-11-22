@@ -1,9 +1,9 @@
 """Unit tests for sample_app.analytics.metrics_calculator."""
 
 from sample_app.analytics.metrics_calculator import (
-    calculate_pipeline_throughput,
-    calculate_percentiles,
     analyze_test_run_stability,
+    calculate_percentiles,
+    calculate_pipeline_throughput,
 )
 
 

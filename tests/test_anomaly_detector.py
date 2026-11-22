@@ -4,10 +4,11 @@ Verifies Z-score calculations, duration spikes, memory surges, and baseline tole
 """
 
 import pytest
+
 from app.telemetry.anomaly_detector import (
-    StatisticalAnomalyDetector,
-    AnomalyType,
     AnomalyReport,
+    AnomalyType,
+    StatisticalAnomalyDetector,
 )
 
 
@@ -15,12 +16,42 @@ from app.telemetry.anomaly_detector import (
 def baseline_history():
     """Historical runs with stable performance ~10s duration, ~100MB RAM, ~25% CPU."""
     return [
-        {"duration_sec": 10.0, "memory_mb_peak": 100.0, "cpu_percent_avg": 25.0, "failure_rate": 0.05},
-        {"duration_sec": 10.5, "memory_mb_peak": 102.0, "cpu_percent_avg": 26.0, "failure_rate": 0.05},
-        {"duration_sec": 9.8,  "memory_mb_peak": 99.0,  "cpu_percent_avg": 24.0, "failure_rate": 0.04},
-        {"duration_sec": 10.2, "memory_mb_peak": 101.0, "cpu_percent_avg": 25.5, "failure_rate": 0.06},
-        {"duration_sec": 10.1, "memory_mb_peak": 100.5, "cpu_percent_avg": 25.0, "failure_rate": 0.05},
-        {"duration_sec": 9.9,  "memory_mb_peak": 100.0, "cpu_percent_avg": 24.5, "failure_rate": 0.05},
+        {
+            "duration_sec": 10.0,
+            "memory_mb_peak": 100.0,
+            "cpu_percent_avg": 25.0,
+            "failure_rate": 0.05,
+        },
+        {
+            "duration_sec": 10.5,
+            "memory_mb_peak": 102.0,
+            "cpu_percent_avg": 26.0,
+            "failure_rate": 0.05,
+        },
+        {
+            "duration_sec": 9.8,
+            "memory_mb_peak": 99.0,
+            "cpu_percent_avg": 24.0,
+            "failure_rate": 0.04,
+        },
+        {
+            "duration_sec": 10.2,
+            "memory_mb_peak": 101.0,
+            "cpu_percent_avg": 25.5,
+            "failure_rate": 0.06,
+        },
+        {
+            "duration_sec": 10.1,
+            "memory_mb_peak": 100.5,
+            "cpu_percent_avg": 25.0,
+            "failure_rate": 0.05,
+        },
+        {
+            "duration_sec": 9.9,
+            "memory_mb_peak": 100.0,
+            "cpu_percent_avg": 24.5,
+            "failure_rate": 0.05,
+        },
     ]
 
 

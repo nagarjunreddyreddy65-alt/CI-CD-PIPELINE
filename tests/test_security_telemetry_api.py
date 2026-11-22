@@ -8,9 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
+from app.database.models import Base, Commit, PipelineRun, Repository
 from app.database.session import get_db
-from app.database.models import Base, Repository, Commit, PipelineRun
+from app.main import app
 
 # Setup shared in-memory test database for API testing
 engine = create_engine(
@@ -85,7 +85,7 @@ def test_api_submit_bandit_security_scan():
                     "line_number": 12,
                 }
             ]
-        }
+        },
     }
 
     res = client.post("/api/v1/security/scan", json=payload)
@@ -110,7 +110,7 @@ def test_api_submit_gitleaks_blocks_release():
                 "StartLine": 2,
                 "Secret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
             }
-        ]
+        ],
     }
 
     res = client.post("/api/v1/security/scan", json=payload)
@@ -159,7 +159,7 @@ def test_api_detect_anomalies():
             {"duration_sec": 12.5, "memory_mb_peak": 139.0, "cpu_percent_avg": 49.0},
             {"duration_sec": 12.0, "memory_mb_peak": 141.0, "cpu_percent_avg": 48.5},
             {"duration_sec": 11.8, "memory_mb_peak": 140.5, "cpu_percent_avg": 48.0},
-        ]
+        ],
     }
 
     res = client.post("/api/v1/telemetry/detect-anomalies", json=payload)
@@ -187,8 +187,8 @@ def test_api_correlate_failures():
                 "commit_hash": "sha-2",
                 "workflow_name": "CI",
                 "error_message": "TimeoutError: Database connection timed out after 5000ms",
-            }
-        ]
+            },
+        ],
     }
 
     res = client.post("/api/v1/telemetry/correlate-failures", json=payload)

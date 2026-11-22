@@ -1,6 +1,8 @@
 """Pipeline analytics, throughput, and performance metrics."""
 
-from typing import List, Dict, Any
+from math import ceil
+from typing import Any
+
 from sample_app.utils.math_ops import compute_average, compute_standard_deviation
 
 
@@ -11,7 +13,7 @@ def calculate_pipeline_throughput(completed_runs: int, time_window_hours: float)
     return round(completed_runs / time_window_hours, 2)
 
 
-def calculate_percentiles(durations: List[float]) -> Dict[str, float]:
+def calculate_percentiles(durations: list[float]) -> dict[str, float]:
     """Computes p50, p90, and p95 latency/duration percentiles."""
     if not durations:
         return {"p50": 0.0, "p90": 0.0, "p95": 0.0}
@@ -20,10 +22,9 @@ def calculate_percentiles(durations: List[float]) -> Dict[str, float]:
     n = len(sorted_vals)
 
     def get_percentile(p: float) -> float:
-        idx = int(math_ceil(p * n)) - 1
+        idx = ceil(p * n) - 1
         return sorted_vals[max(0, min(idx, n - 1))]
 
-    from math import ceil as math_ceil
     return {
         "p50": round(get_percentile(0.50), 2),
         "p90": round(get_percentile(0.90), 2),
@@ -31,7 +32,7 @@ def calculate_percentiles(durations: List[float]) -> Dict[str, float]:
     }
 
 
-def analyze_test_run_stability(historical_durations: List[float]) -> Dict[str, Any]:
+def analyze_test_run_stability(historical_durations: list[float]) -> dict[str, Any]:
     """Calculates mean, std-dev, and stability score (lower coefficient of variation = more stable)."""
     mean = compute_average(historical_durations)
     std = compute_standard_deviation(historical_durations)

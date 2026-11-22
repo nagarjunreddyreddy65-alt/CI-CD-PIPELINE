@@ -1,13 +1,14 @@
 """Unit tests for sample_app.utils.math_ops."""
 
 import pytest
+
 from sample_app.utils.math_ops import (
     add,
-    subtract,
-    multiply,
-    divide,
     compute_average,
     compute_standard_deviation,
+    divide,
+    multiply,
+    subtract,
 )
 
 

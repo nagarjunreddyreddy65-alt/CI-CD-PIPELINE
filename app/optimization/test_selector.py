@@ -4,17 +4,16 @@ Translates selected test identifiers into structured execution commands and comp
 test reduction telemetry.
 """
 
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
 import shlex
+from dataclasses import dataclass
 
 
 @dataclass
 class SelectedTestPlan:
     __test__ = False  # Prevent Pytest collection
-    selected_test_identifiers: List[str]
-    selected_test_files: List[str]
-    pytest_command_args: List[str]
+    selected_test_identifiers: list[str]
+    selected_test_files: list[str]
+    pytest_command_args: list[str]
     pytest_command_string: str
     total_tests_count: int
     selected_tests_count: int
@@ -29,7 +28,7 @@ class TestSelector:
     Computes exact reduction percentage against the complete repository test suite.
     """
 
-    def __init__(self, default_pytest_flags: Optional[List[str]] = None):
+    def __init__(self, default_pytest_flags: list[str] | None = None):
         self.default_flags = default_pytest_flags or ["-v", "--tb=short"]
 
     def calculate_reduction(self, total_tests: int, selected_tests: int) -> float:
@@ -41,8 +40,8 @@ class TestSelector:
 
     def build_test_plan(
         self,
-        selected_identifiers: List[str],
-        all_repository_tests: List[str],
+        selected_identifiers: list[str],
+        all_repository_tests: list[str],
         force_full_suite: bool = False,
     ) -> SelectedTestPlan:
         """
@@ -71,7 +70,7 @@ class TestSelector:
         for item in chosen:
             file_part = item.split("::")[0]
             files_set.add(file_part)
-        selected_files = sorted(list(files_set))
+        selected_files = sorted(files_set)
 
         # Build pytest command arguments
         pytest_args = ["-m", "pytest"] + self.default_flags

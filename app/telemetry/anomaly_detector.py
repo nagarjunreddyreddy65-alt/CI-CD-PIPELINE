@@ -9,9 +9,9 @@ Uses deterministic statistical baselines (Mean, Standard Deviation, Z-Scores) to
 Strictly avoids complex deep-learning anomaly models in favor of transparent, explainable statistics.
 """
 
+from dataclasses import dataclass
 from enum import Enum
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
+
 import numpy as np
 
 
@@ -44,7 +44,7 @@ class AnomalyFinding:
 @dataclass
 class AnomalyReport:
     is_anomalous: bool
-    anomalies: List[AnomalyFinding]
+    anomalies: list[AnomalyFinding]
     samples_count: int
     summary: str
     recommendation: str
@@ -65,8 +65,8 @@ class StatisticalAnomalyDetector:
 
     def detect_anomalies(
         self,
-        current_run: Dict[str, float],
-        historical_runs: List[Dict[str, float]],
+        current_run: dict[str, float],
+        historical_runs: list[dict[str, float]],
     ) -> AnomalyReport:
         """
         Analyzes current_run metrics against historical_runs.
@@ -76,7 +76,7 @@ class StatisticalAnomalyDetector:
         - cpu_percent_avg
         - failure_rate
         """
-        anomalies: List[AnomalyFinding] = []
+        anomalies: list[AnomalyFinding] = []
         n_samples = len(historical_runs)
 
         if n_samples < self.min_samples:
@@ -89,7 +89,9 @@ class StatisticalAnomalyDetector:
             )
 
         # 1. Execution Duration Anomaly
-        hist_durations = [r.get("duration_sec", 0.0) for r in historical_runs if "duration_sec" in r]
+        hist_durations = [
+            r.get("duration_sec", 0.0) for r in historical_runs if "duration_sec" in r
+        ]
         if hist_durations:
             curr_dur = current_run.get("duration_sec", 0.0)
             finding = self._check_z_score(
@@ -119,7 +121,9 @@ class StatisticalAnomalyDetector:
                 anomalies.append(finding)
 
         # 3. Average CPU Usage Anomaly
-        hist_cpu = [r.get("cpu_percent_avg", 0.0) for r in historical_runs if "cpu_percent_avg" in r]
+        hist_cpu = [
+            r.get("cpu_percent_avg", 0.0) for r in historical_runs if "cpu_percent_avg" in r
+        ]
         if hist_cpu:
             curr_cpu = current_run.get("cpu_percent_avg", 0.0)
             finding = self._check_z_score(
@@ -140,27 +144,29 @@ class StatisticalAnomalyDetector:
             avg_fail = float(np.mean(hist_fails))
             # Surge if failure rate jumped significantly above baseline
             if curr_fail > (avg_fail + 0.35) and curr_fail >= 0.50:
-                anomalies.append(AnomalyFinding(
-                    anomaly_type=AnomalyType.FAILURE_RATE_SURGE,
-                    severity=AnomalySeverity.HIGH,
-                    metric_name="failure_rate",
-                    observed_value=curr_fail,
-                    baseline_mean=round(avg_fail, 3),
-                    baseline_std=0.0,
-                    z_score=round((curr_fail - avg_fail) * 10, 2),
-                    message=f"Sudden failure rate surge: observed {curr_fail:.1%} vs historical average {avg_fail:.1%}.",
-                ))
+                anomalies.append(
+                    AnomalyFinding(
+                        anomaly_type=AnomalyType.FAILURE_RATE_SURGE,
+                        severity=AnomalySeverity.HIGH,
+                        metric_name="failure_rate",
+                        observed_value=curr_fail,
+                        baseline_mean=round(avg_fail, 3),
+                        baseline_std=0.0,
+                        z_score=round((curr_fail - avg_fail) * 10, 2),
+                        message=f"Sudden failure rate surge: observed {curr_fail:.1%} vs historical average {avg_fail:.1%}.",
+                    )
+                )
 
         is_anomalous = len(anomalies) > 0
         summary = (
             f"Detected {len(anomalies)} statistical anomalies across {n_samples} historical runs."
-            if is_anomalous else
-            f"All metrics are within normal statistical tolerances (baseline sample size: {n_samples})."
+            if is_anomalous
+            else f"All metrics are within normal statistical tolerances (baseline sample size: {n_samples})."
         )
         recommendation = (
             "Inspect runner host resources and verify recent code changes for performance regressions."
-            if is_anomalous else
-            "Pipeline telemetry healthy."
+            if is_anomalous
+            else "Pipeline telemetry healthy."
         )
 
         return AnomalyReport(
@@ -175,11 +181,11 @@ class StatisticalAnomalyDetector:
         self,
         metric_name: str,
         observed: float,
-        history: List[float],
+        history: list[float],
         anomaly_type: AnomalyType,
         label: str,
         unit: str,
-    ) -> Optional[AnomalyFinding]:
+    ) -> AnomalyFinding | None:
         """Calculates Z-score and flags if above threshold."""
         arr = np.array(history, dtype=np.float64)
         mean_val = float(np.mean(arr))

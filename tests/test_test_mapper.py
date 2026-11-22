@@ -3,8 +3,10 @@ Unit tests for TestDependencyMapper.
 Verifies test mapping, test reduction calculation, and deterministic safety fallback enforcement.
 """
 
-import pytest
 import os
+
+import pytest
+
 from app.analysis.test_mapper import TestDependencyMapper
 
 
@@ -19,7 +21,12 @@ def test_isolated_util_change_optimizes_tests(mapper):
     Unrelated tests (auth, billing, user service) should NOT be selected!
     """
     changes = [
-        {"path": "sample_app/utils/math_ops.py", "change_type": "MODIFIED", "lines_added": 4, "lines_deleted": 1}
+        {
+            "path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 4,
+            "lines_deleted": 1,
+        }
     ]
     result = mapper.map_changes_to_tests(changes)
 
@@ -41,7 +48,12 @@ def test_isolated_util_change_optimizes_tests(mapper):
 def test_auth_change_triggers_safety_fallback(mapper):
     """Modifying security_service.py must trigger Safety Rule 2 full-suite fallback."""
     changes = [
-        {"path": "sample_app/auth/security_service.py", "change_type": "MODIFIED", "lines_added": 2, "lines_deleted": 0}
+        {
+            "path": "sample_app/auth/security_service.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 0,
+        }
     ]
     result = mapper.map_changes_to_tests(changes)
 
@@ -54,7 +66,12 @@ def test_auth_change_triggers_safety_fallback(mapper):
 def test_payment_change_triggers_safety_fallback(mapper):
     """Modifying payment_processor.py must trigger Safety Rule 3 full-suite fallback."""
     changes = [
-        {"path": "sample_app/billing/payment_processor.py", "change_type": "MODIFIED", "lines_added": 5, "lines_deleted": 0}
+        {
+            "path": "sample_app/billing/payment_processor.py",
+            "change_type": "MODIFIED",
+            "lines_added": 5,
+            "lines_deleted": 0,
+        }
     ]
     result = mapper.map_changes_to_tests(changes)
 
@@ -66,7 +83,12 @@ def test_payment_change_triggers_safety_fallback(mapper):
 def test_database_migration_triggers_safety_fallback(mapper):
     """Modifying a migration file must trigger Safety Rule 1 full-suite fallback."""
     changes = [
-        {"path": "app/database/models.py", "change_type": "MODIFIED", "lines_added": 1, "lines_deleted": 0}
+        {
+            "path": "app/database/models.py",
+            "change_type": "MODIFIED",
+            "lines_added": 1,
+            "lines_deleted": 0,
+        }
     ]
     result = mapper.map_changes_to_tests(changes)
 
@@ -77,7 +99,12 @@ def test_database_migration_triggers_safety_fallback(mapper):
 def test_ci_workflow_change_triggers_safety_fallback(mapper):
     """Modifying CI config must trigger Safety Rule 7 full-suite fallback."""
     changes = [
-        {"path": ".github/workflows/ci.yml", "change_type": "MODIFIED", "lines_added": 3, "lines_deleted": 1}
+        {
+            "path": ".github/workflows/ci.yml",
+            "change_type": "MODIFIED",
+            "lines_added": 3,
+            "lines_deleted": 1,
+        }
     ]
     result = mapper.map_changes_to_tests(changes)
 

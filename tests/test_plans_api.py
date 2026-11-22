@@ -2,14 +2,14 @@
 API Tests for Plan Generation & Retrieval Endpoints.
 """
 
-import pytest
 from fastapi.testclient import TestClient
-from app.main import app
-from app.database.session import get_db
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
 from app.database.models import Base
+from app.database.session import get_db
+from app.main import app
 
 # Setup shared in-memory test database with StaticPool for API testing
 engine = create_engine(

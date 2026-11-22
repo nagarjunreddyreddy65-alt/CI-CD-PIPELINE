@@ -4,15 +4,13 @@ Measures real-time execution duration, psutil hardware telemetry (CPU, peak RAM,
 and test execution counters with privacy-aware secret redaction.
 """
 
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
-import time
 import os
 import platform
-import psutil
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from typing import Any
 
-from app.core.logging import logger, redact_secrets
+import psutil
 
 
 @dataclass
@@ -29,7 +27,7 @@ class TelemetrySnapshot:
     runner_os: str
     collected_at: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -39,7 +37,7 @@ class TelemetryCollector:
     def __init__(self):
         self.os_name = f"{platform.system()} {platform.release()}"
 
-    def capture_instant_metrics(self) -> Dict[str, float]:
+    def capture_instant_metrics(self) -> dict[str, float]:
         """Captures an instantaneous snapshot of current system resources."""
         proc = psutil.Process(os.getpid())
         mem_info = proc.memory_info()
@@ -59,7 +57,7 @@ class TelemetryCollector:
         tests_passed: int,
         tests_failed: int,
         tests_skipped: int = 0,
-        runner_os: Optional[str] = None,
+        runner_os: str | None = None,
     ) -> TelemetrySnapshot:
         """Constructs a validated TelemetrySnapshot instance."""
         return TelemetrySnapshot(
@@ -73,5 +71,5 @@ class TelemetryCollector:
             tests_failed=max(0, int(tests_failed)),
             tests_skipped=max(0, int(tests_skipped)),
             runner_os=runner_os or self.os_name,
-            collected_at=datetime.now(timezone.utc).isoformat(),
+            collected_at=datetime.now(UTC).isoformat(),
         )

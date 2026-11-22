@@ -4,11 +4,12 @@ Runs the complete test suite, measures execution duration, collects telemetry,
 and outputs performance baselines for ML evaluation.
 """
 
-import time
-import subprocess
 import json
-import sys
 import os
+import subprocess
+import sys
+import time
+
 import psutil
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -20,12 +21,12 @@ def run_baseline_benchmark():
     print("=" * 70)
 
     start_cpu = psutil.cpu_percent(interval=0.5)
-    start_memory = psutil.virtual_memory().used / (1024 * 1024)
+    _start_memory = psutil.virtual_memory().used / (1024 * 1024)
     start_time = time.perf_counter()
 
     # Execute full pytest suite
     cmd = [sys.executable, "-m", "pytest", "tests/", "tests_sample_app/", "-v"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     end_time = time.perf_counter()
     duration_sec = round(end_time - start_time, 3)

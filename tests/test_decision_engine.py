@@ -4,13 +4,12 @@ Verifies coordination between AST mapping, ML risk prediction, Safety Rules, and
 """
 
 import pytest
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database.models import Base, PipelineRun, ExecutionPlan, Prediction, AuditLog
-from app.optimization.decision_engine import DecisionEngine, ExecutionDecision
+from app.database.models import AuditLog, Base, ExecutionPlan, PipelineRun, Prediction
 from app.ml.model_manager import ModelManager
+from app.optimization.decision_engine import DecisionEngine, ExecutionDecision
 
 
 @pytest.fixture
@@ -156,17 +155,27 @@ def test_decision_engine_db_persistence(trained_model_manager, sqlite_db_session
     assert plan.pipeline_run_id is not None
 
     # Query DB entities
-    saved_plan = sqlite_db_session.query(ExecutionPlan).filter(ExecutionPlan.id == plan.plan_id).first()
+    saved_plan = (
+        sqlite_db_session.query(ExecutionPlan).filter(ExecutionPlan.id == plan.plan_id).first()
+    )
     assert saved_plan is not None
     assert saved_plan.decision == plan.decision.value
 
-    saved_run = sqlite_db_session.query(PipelineRun).filter(PipelineRun.id == plan.pipeline_run_id).first()
+    saved_run = (
+        sqlite_db_session.query(PipelineRun).filter(PipelineRun.id == plan.pipeline_run_id).first()
+    )
     assert saved_run is not None
     assert saved_run.commit.commit_hash == "persisted-sha-12345"
 
-    saved_pred = sqlite_db_session.query(Prediction).filter(Prediction.pipeline_run_id == saved_run.id).first()
+    saved_pred = (
+        sqlite_db_session.query(Prediction)
+        .filter(Prediction.pipeline_run_id == saved_run.id)
+        .first()
+    )
     assert saved_pred is not None
 
-    audit_entry = sqlite_db_session.query(AuditLog).filter(AuditLog.entity_id == saved_plan.id).first()
+    audit_entry = (
+        sqlite_db_session.query(AuditLog).filter(AuditLog.entity_id == saved_plan.id).first()
+    )
     assert audit_entry is not None
     assert audit_entry.event_type == "EXECUTION_PLAN_GENERATED"

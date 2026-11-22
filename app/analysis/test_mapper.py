@@ -5,12 +5,12 @@ Governed by the safety principle:
 "When dependencies cannot be verified safely, full-suite fallback is triggered."
 """
 
-from typing import List, Set, Dict, Any, Optional
-from dataclasses import dataclass, field
-import os
 import ast
+import os
+from dataclasses import dataclass, field
+from typing import Any
 
-from app.analysis.change_analyzer import ChangeAnalyzer, ChangeAnalysisResult
+from app.analysis.change_analyzer import ChangeAnalysisResult, ChangeAnalyzer
 from app.analysis.dependency_analyzer import ASTDependencyAnalyzer, DependencyGraph
 
 
@@ -18,13 +18,13 @@ from app.analysis.dependency_analyzer import ASTDependencyAnalyzer, DependencyGr
 class TestMappingResult:
     __test__ = False  # Prevent Pytest collection
     """Output plan from mapping changed files through the AST dependency graph."""
-    changed_modules: List[str]
-    affected_modules: List[str]
-    affected_test_files: List[str]
-    affected_test_identifiers: List[str]
+    changed_modules: list[str]
+    affected_modules: list[str]
+    affected_test_files: list[str]
+    affected_test_identifiers: list[str]
     fallback_required: bool
-    fallback_reason: Optional[str]
-    triggered_safety_rules: List[str] = field(default_factory=list)
+    fallback_reason: str | None
+    triggered_safety_rules: list[str] = field(default_factory=list)
     total_repository_tests: int = 0
     selected_tests_count: int = 0
     estimated_test_reduction_pct: float = 0.0
@@ -38,10 +38,10 @@ class TestDependencyMapper:
         self.change_analyzer = ChangeAnalyzer(root_dir)
         self.dep_analyzer = ASTDependencyAnalyzer(root_dir)
 
-    def discover_all_test_functions(self, test_dirs: Optional[List[str]] = None) -> List[str]:
+    def discover_all_test_functions(self, test_dirs: list[str] | None = None) -> list[str]:
         """Discovers all test function identifiers (e.g. tests_sample_app/test_math.py::test_addition)."""
         test_dirs = test_dirs or ["tests", "tests_sample_app"]
-        identifiers: List[str] = []
+        identifiers: list[str] = []
 
         for folder in test_dirs:
             full_folder = os.path.join(self.root_dir, folder)
@@ -57,9 +57,11 @@ class TestDependencyMapper:
                             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                                 tree = ast.parse(f.read(), filename=file_path)
                             for node in ast.walk(tree):
-                                if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                                if isinstance(node, ast.FunctionDef) and node.name.startswith(
+                                    "test_"
+                                ):
                                     identifiers.append(f"{rel_path}::{node.name}")
-                        except Exception:
+                        except (SyntaxError, OSError, ValueError):
                             # If file cannot be parsed, add file path itself
                             identifiers.append(rel_path)
 
@@ -67,8 +69,8 @@ class TestDependencyMapper:
 
     def map_changes_to_tests(
         self,
-        changed_file_entries: List[Dict[str, Any]],
-        dependency_graph: Optional[DependencyGraph] = None,
+        changed_file_entries: list[dict[str, Any]],
+        dependency_graph: DependencyGraph | None = None,
     ) -> TestMappingResult:
         """
         Main mapping algorithm:
@@ -78,11 +80,13 @@ class TestDependencyMapper:
         4. Validates safety constraints; falls back if unresolvable.
         """
         # Step 1: Change Analysis
-        change_result: ChangeAnalysisResult = self.change_analyzer.analyze_changes(changed_file_entries)
+        change_result: ChangeAnalysisResult = self.change_analyzer.analyze_changes(
+            changed_file_entries
+        )
         all_repo_tests = self.discover_all_test_functions()
         total_tests = len(all_repo_tests)
 
-        safety_triggers: List[str] = list(change_result.sensitive_triggers)
+        safety_triggers: list[str] = list(change_result.sensitive_triggers)
 
         # Check Part 5 Safety Fallback triggers from file paths
         if change_result.has_migration_changes:
@@ -233,25 +237,24 @@ class TestDependencyMapper:
             )
 
         # Step 3: Traverse Graph to find affected modules
-        changed_modules: List[str] = [
+        changed_modules: list[str] = [
             self.dep_analyzer._file_path_to_module(f) for f in change_result.python_files
         ]
-        affected_modules: Set[str] = set(changed_modules)
+        affected_modules: set[str] = set(changed_modules)
 
         for mod in changed_modules:
             dependents = graph.get_dependents(mod)
             affected_modules.update(dependents)
 
         # Step 4: Extract test files from affected modules
-        affected_test_files: Set[str] = set()
+        affected_test_files: set[str] = set()
         for mod in affected_modules:
             node_data = graph.graph.nodes.get(mod, {})
             f_path = node_data.get("file_path", "")
             if f_path:
                 rel = os.path.relpath(f_path, self.root_dir).replace("\\", "/")
                 if (
-                    rel.startswith("tests/")
-                    or rel.startswith("tests_")
+                    rel.startswith(("tests/", "tests_"))
                     or "/tests/" in rel
                     or rel.endswith("_test.py")
                 ):
@@ -262,8 +265,9 @@ class TestDependencyMapper:
             affected_test_files.add(tf)
 
         # Step 5: Filter specific test identifiers
-        selected_identifiers: List[str] = [
-            t_id for t_id in all_repo_tests
+        selected_identifiers: list[str] = [
+            t_id
+            for t_id in all_repo_tests
             if any(t_id.startswith(tf) for tf in affected_test_files)
         ]
 
@@ -271,7 +275,7 @@ class TestDependencyMapper:
         if not selected_identifiers and change_result.total_files_changed > 0:
             return TestMappingResult(
                 changed_modules=changed_modules,
-                affected_modules=sorted(list(affected_modules)),
+                affected_modules=sorted(affected_modules),
                 affected_test_files=[],
                 affected_test_identifiers=all_repo_tests,
                 fallback_required=True,
@@ -284,12 +288,14 @@ class TestDependencyMapper:
 
         reduction_pct = 0.0
         if total_tests > 0:
-            reduction_pct = round(((total_tests - len(selected_identifiers)) / total_tests) * 100.0, 1)
+            reduction_pct = round(
+                ((total_tests - len(selected_identifiers)) / total_tests) * 100.0, 1
+            )
 
         return TestMappingResult(
             changed_modules=changed_modules,
-            affected_modules=sorted(list(affected_modules)),
-            affected_test_files=sorted(list(affected_test_files)),
+            affected_modules=sorted(affected_modules),
+            affected_test_files=sorted(affected_test_files),
             affected_test_identifiers=sorted(selected_identifiers),
             fallback_required=False,
             fallback_reason=None,

@@ -7,38 +7,36 @@ Core Axiom:
 "AI predicts failure risk & duration. Deterministic safety rules decide execution."
 """
 
-from typing import List, Dict, Any, Optional
-from enum import Enum
-from dataclasses import dataclass, field
 import json
 import os
 import time
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.logging import logger
-from app.analysis.change_analyzer import ChangeAnalyzer, ChangeAnalysisResult
-from app.analysis.dependency_analyzer import ASTDependencyAnalyzer
+from app.analysis.change_analyzer import ChangeAnalysisResult, ChangeAnalyzer
 from app.analysis.test_mapper import TestDependencyMapper, TestMappingResult
+from app.core.logging import logger
+from app.database.models import (
+    AuditLog,
+    ChangedFile,
+    Commit,
+    ExecutionPlan,
+    PipelineRun,
+    Prediction,
+    Repository,
+)
 from app.ml.feature_extractor import FeatureExtractor, PipelineFeatures
 from app.ml.model_manager import ModelManager
 from app.optimization.safety_policy import (
-    SafetyPolicyEvaluator,
     SafetyContext,
     SafetyEvaluationResult,
-    SafetyRuleCode,
+    SafetyPolicyEvaluator,
 )
-from app.optimization.test_selector import TestSelector, SelectedTestPlan
-from app.database.models import (
-    PipelineRun,
-    ExecutionPlan,
-    Prediction,
-    AuditLog,
-    Repository,
-    Commit,
-    ChangedFile,
-)
+from app.optimization.test_selector import SelectedTestPlan, TestSelector
 
 
 class ExecutionDecision(str, Enum):
@@ -53,9 +51,9 @@ class ExecutionPlanResult:
     decision_reason: str
     is_optimized: bool
     fallback_triggered: bool
-    fallback_reason: Optional[str]
-    selected_tests: List[str]
-    selected_test_files: List[str]
+    fallback_reason: str | None
+    selected_tests: list[str]
+    selected_test_files: list[str]
     pytest_command: str
     total_tests_count: int
     selected_tests_count: int
@@ -64,11 +62,11 @@ class ExecutionPlanResult:
     predicted_failure_class: int
     predicted_duration_sec: float
     estimated_time_saved_sec: float
-    triggered_safety_rules: List[str]
-    features: Dict[str, Any]
+    triggered_safety_rules: list[str]
+    features: dict[str, Any]
     model_version: str
-    pipeline_run_id: Optional[str] = None
-    plan_id: Optional[str] = None
+    pipeline_run_id: str | None = None
+    plan_id: str | None = None
 
 
 class DecisionEngine:
@@ -79,10 +77,10 @@ class DecisionEngine:
 
     def __init__(
         self,
-        root_dir: Optional[str] = None,
-        model_manager: Optional[ModelManager] = None,
-        safety_evaluator: Optional[SafetyPolicyEvaluator] = None,
-        test_selector: Optional[TestSelector] = None,
+        root_dir: str | None = None,
+        model_manager: ModelManager | None = None,
+        safety_evaluator: SafetyPolicyEvaluator | None = None,
+        test_selector: TestSelector | None = None,
     ):
         self.root_dir = os.path.abspath(root_dir or ".")
         self.change_analyzer = ChangeAnalyzer(self.root_dir)
@@ -94,14 +92,14 @@ class DecisionEngine:
 
     def generate_plan(
         self,
-        changed_file_entries: List[Dict[str, Any]],
+        changed_file_entries: list[dict[str, Any]],
         historical_failure_rate: float = 0.05,
         previous_execution_duration: float = 25.0,
         historical_runs_count: int = 20,
         risk_threshold: float = 0.50,
-        db: Optional[Session] = None,
-        repository_name: Optional[str] = None,
-        commit_hash: Optional[str] = None,
+        db: Session | None = None,
+        repository_name: str | None = None,
+        commit_hash: str | None = None,
         branch: str = "main",
         author_name: str = "Developer",
         author_email: str = "dev@example.com",
@@ -118,10 +116,11 @@ class DecisionEngine:
         7. Persists execution record to DB if session provided.
         """
         all_tests = self.test_mapper.discover_all_test_functions()
-        total_tests = len(all_tests)
 
         # Step 1: Change Analysis
-        change_res: ChangeAnalysisResult = self.change_analyzer.analyze_changes(changed_file_entries)
+        change_res: ChangeAnalysisResult = self.change_analyzer.analyze_changes(
+            changed_file_entries
+        )
 
         # Step 2: AST Dependency & Test Mapping
         mapping_res: TestMappingResult = self.test_mapper.map_changes_to_tests(changed_file_entries)
@@ -154,8 +153,8 @@ class DecisionEngine:
         # Check model artifact presence and compatibility
         models_status = self.model_manager.get_models_status()
         model_artifacts_exist = (
-            models_status["failure_predictor"]["model_file_exists"] and
-            models_status["runtime_predictor"]["model_file_exists"]
+            models_status["failure_predictor"]["model_file_exists"]
+            and models_status["runtime_predictor"]["model_file_exists"]
         )
 
         # Step 5: Construct Safety Context & Evaluate Deterministic Rules
@@ -164,7 +163,9 @@ class DecisionEngine:
         has_dynamic_imp = "Safety Rule 10" in (mapping_res.fallback_reason or "")
         has_circular = "Safety Rule 11" in (mapping_res.fallback_reason or "")
         has_unmapped = "Safety Rule 12" in (mapping_res.fallback_reason or "")
-        is_empty_selection = len(selected_candidate_tests) == 0 and change_res.total_changed_files > 0
+        is_empty_selection = (
+            len(selected_candidate_tests) == 0 and change_res.total_changed_files > 0
+        )
 
         safety_ctx = SafetyContext(
             has_migration_changes=change_res.has_migration_changes,
@@ -189,7 +190,9 @@ class DecisionEngine:
             api_reachable=True,
             github_api_success=True,
             unverifiable_safety_detected=False,
-            custom_fallback_reason=mapping_res.fallback_reason if mapping_res.fallback_required else None,
+            custom_fallback_reason=mapping_res.fallback_reason
+            if mapping_res.fallback_required
+            else None,
         )
 
         safety_res: SafetyEvaluationResult = self.safety_evaluator.evaluate(safety_ctx)
@@ -241,7 +244,9 @@ class DecisionEngine:
         # If optimized: saved time = (baseline_duration) * (reduction_pct / 100)
         baseline_time = previous_execution_duration if previous_execution_duration > 0 else 30.0
         if decision == ExecutionDecision.OPTIMIZED:
-            estimated_time_saved = round(baseline_time * (selected_plan.reduction_percentage / 100.0), 2)
+            estimated_time_saved = round(
+                baseline_time * (selected_plan.reduction_percentage / 100.0), 2
+            )
         else:
             estimated_time_saved = 0.0
 
@@ -286,7 +291,7 @@ class DecisionEngine:
         self,
         db: Session,
         plan_result: ExecutionPlanResult,
-        changed_file_entries: List[Dict[str, Any]],
+        changed_file_entries: list[dict[str, Any]],
         repository_name: str,
         commit_hash: str,
         branch: str,
@@ -299,7 +304,9 @@ class DecisionEngine:
             # 1. Get or create repository
             repo = db.query(Repository).filter(Repository.name == repository_name).first()
             if not repo:
-                owner = repository_name.split("/")[0] if "/" in repository_name else "AutonomousDevOps"
+                owner = (
+                    repository_name.split("/")[0] if "/" in repository_name else "AutonomousDevOps"
+                )
                 repo = Repository(
                     name=repository_name,
                     owner=owner,
@@ -310,10 +317,11 @@ class DecisionEngine:
                 db.flush()
 
             # 2. Get or create commit
-            commit = db.query(Commit).filter(
-                Commit.repository_id == repo.id,
-                Commit.commit_hash == commit_hash
-            ).first()
+            commit = (
+                db.query(Commit)
+                .filter(Commit.repository_id == repo.id, Commit.commit_hash == commit_hash)
+                .first()
+            )
             if not commit:
                 commit = Commit(
                     repository_id=repo.id,
@@ -362,7 +370,9 @@ class DecisionEngine:
                 total_tests_count=plan_result.total_tests_count,
                 tests_reduction_pct=plan_result.tests_reduction_pct,
                 selected_tests_json=json.dumps(plan_result.selected_tests),
-                safety_rule_triggered=",".join(plan_result.triggered_safety_rules) if plan_result.triggered_safety_rules else None,
+                safety_rule_triggered=",".join(plan_result.triggered_safety_rules)
+                if plan_result.triggered_safety_rules
+                else None,
             )
             db.add(plan)
             db.flush()
@@ -391,8 +401,10 @@ class DecisionEngine:
 
             plan_result.pipeline_run_id = pipeline_run.id
             plan_result.plan_id = plan.id
-            logger.info(f"Persisted execution plan {plan.id} for run {pipeline_run.id} (Decision: {plan_result.decision.value})")
+            logger.info(
+                f"Persisted execution plan {plan.id} for run {pipeline_run.id} (Decision: {plan_result.decision.value})"
+            )
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Error persisting execution plan to DB: {e}")

@@ -4,7 +4,8 @@ Verifies file classification, diff parsing, and deterministic sensitivity detect
 """
 
 import pytest
-from app.analysis.change_analyzer import ChangeAnalyzer, FileChange
+
+from app.analysis.change_analyzer import ChangeAnalyzer
 
 
 @pytest.fixture
@@ -76,8 +77,18 @@ def test_classify_unsupported_binary_file(analyzer):
 
 def test_analyze_changes_batch(analyzer):
     changes = [
-        {"path": "sample_app/utils/math_ops.py", "change_type": "MODIFIED", "lines_added": 10, "lines_deleted": 2},
-        {"path": "sample_app/auth/security_service.py", "change_type": "MODIFIED", "lines_added": 5, "lines_deleted": 1},
+        {
+            "path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 10,
+            "lines_deleted": 2,
+        },
+        {
+            "path": "sample_app/auth/security_service.py",
+            "change_type": "MODIFIED",
+            "lines_added": 5,
+            "lines_deleted": 1,
+        },
         {"path": "README.md", "change_type": "MODIFIED", "lines_added": 20, "lines_deleted": 0},
     ]
     result = analyzer.analyze_changes(changes)

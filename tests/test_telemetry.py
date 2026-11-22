@@ -2,8 +2,7 @@
 Unit Tests for Hardware Telemetry Collection.
 """
 
-import pytest
-from app.telemetry.collector import TelemetryCollector, TelemetrySnapshot
+from app.telemetry.collector import TelemetryCollector
 
 
 def test_telemetry_snapshot_creation():

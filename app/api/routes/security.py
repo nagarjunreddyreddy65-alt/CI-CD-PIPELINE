@@ -3,15 +3,15 @@ API Router for Security Scanning & Compliance.
 Provides endpoints to submit, evaluate, and audit SAST, SCA, and Secret Detection scans.
 """
 
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any
+
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-import json
 
+from app.database.models import SecurityScan
 from app.database.session import get_db
-from app.database.models import SecurityScan, PipelineRun
-from app.security.scanner import SecurityScanner, ScanResult
+from app.security.scanner import ScanResult, SecurityScanner
 
 router = APIRouter(prefix="/security", tags=["Security & Compliance"])
 
@@ -23,7 +23,7 @@ class SecurityScanRequest(BaseModel):
 
 
 class SecurityScanResponse(BaseModel):
-    id: Optional[str]
+    id: str | None
     pipeline_run_id: str
     tool_name: str
     status: str
@@ -31,7 +31,7 @@ class SecurityScanResponse(BaseModel):
     findings_count: int
     should_block_release: bool
     summary: str
-    findings: List[Dict[str, Any]]
+    findings: list[dict[str, Any]]
     executed_at: str
 
 
@@ -89,15 +89,17 @@ def get_security_scans_by_run(
     for s in scans:
         if s.status == "FAILED" or s.highest_severity in ("HIGH", "CRITICAL"):
             has_blocking_failure = True
-        results.append({
-            "id": s.id,
-            "tool_name": s.tool_name,
-            "status": s.status,
-            "highest_severity": s.highest_severity,
-            "findings_count": s.findings_count,
-            "summary": s.summary,
-            "executed_at": s.executed_at.isoformat() if s.executed_at else None,
-        })
+        results.append(
+            {
+                "id": s.id,
+                "tool_name": s.tool_name,
+                "status": s.status,
+                "highest_severity": s.highest_severity,
+                "findings_count": s.findings_count,
+                "summary": s.summary,
+                "executed_at": s.executed_at.isoformat() if s.executed_at else None,
+            }
+        )
 
     return {
         "pipeline_run_id": pipeline_run_id,

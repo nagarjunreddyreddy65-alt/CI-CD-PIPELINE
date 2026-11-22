@@ -3,9 +3,9 @@ Unit tests for FeatureExtractor.
 Verifies pre-execution feature vector generation, data types, and information leakage prevention.
 """
 
-import pytest
 import numpy as np
-from app.ml.feature_extractor import FeatureExtractor, PipelineFeatures
+
+from app.ml.feature_extractor import FeatureExtractor
 
 
 def test_feature_extraction_bounds():

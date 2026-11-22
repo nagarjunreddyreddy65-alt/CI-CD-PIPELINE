@@ -4,8 +4,9 @@ Handles model artifact persistence, versioning, minimum training sample validati
 and synthetic historical bootstrap data generation for benchmarking.
 """
 
-from typing import Dict, Any, Tuple, Optional
 import os
+from typing import Any
+
 import joblib
 import numpy as np
 
@@ -21,14 +22,16 @@ class ModelManager:
     Enforces Safety Rule 17: Validates that minimum historical samples (>= 15) are satisfied.
     """
 
-    def __init__(self, registry_dir: Optional[str] = None):
+    def __init__(self, registry_dir: str | None = None):
         self.registry_dir = os.path.abspath(registry_dir or settings.MODEL_REGISTRY_PATH)
         os.makedirs(self.registry_dir, exist_ok=True)
 
         self.failure_predictor = FailurePredictor()
         self.runtime_predictor = RuntimePredictor()
 
-    def generate_synthetic_historical_data(self, n_samples: int = 50) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def generate_synthetic_historical_data(
+        self, n_samples: int = 50
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Generates realistic synthetic pipeline history for model bootstrap & testing.
         Returns:
@@ -68,17 +71,28 @@ class ModelManager:
             X_list.append(feature_vec)
 
             # Failure logic: sensitive changes + large edits have higher failure probability
-            fail_prob = 0.05 + (0.35 if is_sensitive else 0.0) + (0.25 if tot_lines > 150 else 0.0) + hist_fail_rate
+            fail_prob = (
+                0.05
+                + (0.35 if is_sensitive else 0.0)
+                + (0.25 if tot_lines > 150 else 0.0)
+                + hist_fail_rate
+            )
             failed = 1 if np.random.rand() < fail_prob else 0
             y_fail.append(failed)
 
             # Runtime logic: base time + time per test + line diff penalty
-            dur = max(2.0, 3.0 + (selected_tests * 0.4) + (tot_lines * 0.02) + np.random.normal(0, 1.0))
+            dur = max(
+                2.0, 3.0 + (selected_tests * 0.4) + (tot_lines * 0.02) + np.random.normal(0, 1.0)
+            )
             y_time.append(round(dur, 2))
 
-        return np.array(X_list, dtype=np.float64), np.array(y_fail, dtype=np.int32), np.array(y_time, dtype=np.float64)
+        return (
+            np.array(X_list, dtype=np.float64),
+            np.array(y_fail, dtype=np.int32),
+            np.array(y_time, dtype=np.float64),
+        )
 
-    def train_and_persist(self, n_samples: int = 50) -> Dict[str, Any]:
+    def train_and_persist(self, n_samples: int = 50) -> dict[str, Any]:
         """Trains both models on synthetic bootstrap data and persists artifacts to disk."""
         if n_samples < settings.MIN_TRAINING_RUNS:
             raise ValueError(
@@ -119,12 +133,12 @@ class ModelManager:
                 self.failure_predictor = joblib.load(fail_path)
                 self.runtime_predictor = joblib.load(time_path)
                 return True
-            except Exception as e:
+            except (OSError, EOFError, ValueError, KeyError, AttributeError) as e:
                 logger.error(f"Failed to load ML artifacts from {self.registry_dir}: {e}")
                 return False
         return False
 
-    def get_models_status(self) -> Dict[str, Any]:
+    def get_models_status(self) -> dict[str, Any]:
         """Returns readiness and artifact presence for predictive models."""
         fail_path = os.path.join(self.registry_dir, "failure_predictor.joblib")
         time_path = os.path.join(self.registry_dir, "runtime_predictor.joblib")
@@ -143,4 +157,3 @@ class ModelManager:
                 "artifact_path": time_path,
             },
         }
-

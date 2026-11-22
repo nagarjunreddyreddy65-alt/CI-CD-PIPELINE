@@ -4,12 +4,13 @@ NOTE: This is a sensitive security module.
 Any change in this module triggers Safety Rule 2 (Authentication Fallback).
 """
 
+import base64
+import binascii
 import hashlib
 import hmac
-import base64
 import json
 import time
-from typing import Dict, Any, Optional
+from typing import Any
 
 
 class SecurityService:
@@ -36,15 +37,19 @@ class SecurityService:
         return hmac.compare_digest(computed_hash, expected_hash)
 
     @classmethod
-    def generate_token(cls, user_id: str, role: str, secret_key: str, expires_in_sec: int = 3600) -> str:
+    def generate_token(
+        cls, user_id: str, role: str, secret_key: str, expires_in_sec: int = 3600
+    ) -> str:
         """Generates a signed stateless session token."""
         header = base64.urlsafe_b64encode(json.dumps({"alg": "HS256"}).encode()).decode()
         payload = base64.urlsafe_b64encode(
-            json.dumps({
-                "sub": user_id,
-                "role": role,
-                "exp": int(time.time()) + expires_in_sec,
-            }).encode()
+            json.dumps(
+                {
+                    "sub": user_id,
+                    "role": role,
+                    "exp": int(time.time()) + expires_in_sec,
+                }
+            ).encode()
         ).decode()
         message = f"{header}.{payload}".encode()
         signature = base64.urlsafe_b64encode(
@@ -53,7 +58,7 @@ class SecurityService:
         return f"{header}.{payload}.{signature}"
 
     @classmethod
-    def verify_token(cls, token: str, secret_key: str) -> Optional[Dict[str, Any]]:
+    def verify_token(cls, token: str, secret_key: str) -> dict[str, Any] | None:
         """Verifies and decodes a signed session token."""
         try:
             parts = token.split(".")
@@ -72,5 +77,5 @@ class SecurityService:
             if payload.get("exp", 0) < int(time.time()):
                 return None  # Expired
             return payload
-        except Exception:
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError, binascii.Error):
             return None

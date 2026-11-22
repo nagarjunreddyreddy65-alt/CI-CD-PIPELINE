@@ -3,12 +3,11 @@ Unit Tests for Deterministic Failure Event Correlator.
 Verifies failure signature normalization and systemic failure clustering.
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+
 from app.telemetry.event_correlator import (
     EventCorrelator,
     FailureEvent,
-    CorrelatedEventGroup,
 )
 
 
@@ -24,7 +23,7 @@ def test_signature_normalization_strips_addresses_and_paths():
 
 def test_event_correlation_groups_systemic_failures():
     correlator = EventCorrelator(time_window_seconds=3600)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # 3 failures across 2 different commits with the exact same failure signature
     events = [

@@ -4,10 +4,12 @@ Parses Python source code into Abstract Syntax Trees (AST), extracts static and 
 and constructs a directed dependency graph using NetworkX.
 """
 
-from typing import Dict, List, Set, Tuple, Optional, Any
 import ast
 import os
+from typing import Any
+
 import networkx as nx
+
 from app.core.logging import logger
 
 
@@ -15,35 +17,41 @@ class DynamicImportDetector(ast.NodeVisitor):
     """Detects unresolvable dynamic imports and dynamic evaluation constructs."""
 
     def __init__(self):
-        self.dynamic_imports: List[Dict[str, Any]] = []
+        self.dynamic_imports: list[dict[str, Any]] = []
 
     def visit_Call(self, node: ast.Call):
         # 1. Detect __import__(...)
         if isinstance(node.func, ast.Name) and node.func.id == "__import__":
-            self.dynamic_imports.append({
-                "type": "__import__",
-                "line": node.lineno,
-                "reason": "Direct call to __import__()",
-            })
+            self.dynamic_imports.append(
+                {
+                    "type": "__import__",
+                    "line": node.lineno,
+                    "reason": "Direct call to __import__()",
+                }
+            )
         # 2. Detect eval(...) or exec(...)
         elif isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
-            self.dynamic_imports.append({
-                "type": node.func.id,
-                "line": node.lineno,
-                "reason": f"Dynamic evaluation via {node.func.id}()",
-            })
+            self.dynamic_imports.append(
+                {
+                    "type": node.func.id,
+                    "line": node.lineno,
+                    "reason": f"Dynamic evaluation via {node.func.id}()",
+                }
+            )
         # 3. Detect importlib.import_module(...)
-        elif isinstance(node.func, ast.Attribute):
-            if (
-                isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "importlib"
-                and node.func.attr == "import_module"
-            ):
-                self.dynamic_imports.append({
+        elif (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "importlib"
+            and node.func.attr == "import_module"
+        ):
+            self.dynamic_imports.append(
+                {
                     "type": "importlib.import_module",
                     "line": node.lineno,
                     "reason": "Dynamic module loading via importlib.import_module()",
-                })
+                }
+            )
         self.generic_visit(node)
 
 
@@ -52,8 +60,8 @@ class ImportVisitor(ast.NodeVisitor):
 
     def __init__(self, current_module: str):
         self.current_module = current_module
-        self.imported_modules: Set[str] = set()
-        self.imported_symbols: Dict[str, str] = {}  # symbol -> module
+        self.imported_modules: set[str] = set()
+        self.imported_symbols: dict[str, str] = {}  # symbol -> module
 
     def visit_Import(self, node: ast.Import):
         for alias in node.names:
@@ -68,7 +76,7 @@ class ImportVisitor(ast.NodeVisitor):
         if node.level > 0:
             parts = self.current_module.split(".")
             if len(parts) >= node.level:
-                prefix = ".".join(parts[:-node.level])
+                prefix = ".".join(parts[: -node.level])
                 base_module = f"{prefix}.{base_module}".strip(".")
             else:
                 base_module = base_module.strip(".")
@@ -91,8 +99,8 @@ class DependencyGraph:
     def __init__(self):
         # DiGraph edge (A, B) means module A depends on (imports) module B
         self.graph = nx.DiGraph()
-        self.parsing_errors: Dict[str, str] = {}
-        self.dynamic_imports_detected: Dict[str, List[Dict[str, Any]]] = {}
+        self.parsing_errors: dict[str, str] = {}
+        self.dynamic_imports_detected: dict[str, list[dict[str, Any]]] = {}
 
     def add_module(self, module_name: str, file_path: str):
         """Adds a module node with its filesystem path."""
@@ -102,7 +110,7 @@ class DependencyGraph:
         """Adds a dependency edge: source_module -> target_module."""
         self.graph.add_edge(source_module, target_module)
 
-    def get_dependents(self, module_name: str) -> Set[str]:
+    def get_dependents(self, module_name: str) -> set[str]:
         """
         Returns all modules that directly or indirectly depend on module_name.
         If B imports A, then changing A affects B (reverse traversal of dependency edge).
@@ -129,13 +137,13 @@ class ASTDependencyAnalyzer:
     def _file_path_to_module(self, file_path: str) -> str:
         """Converts a relative file path (sample_app/utils/math_ops.py) to module format (sample_app.utils.math_ops)."""
         rel = os.path.relpath(file_path, self.root_dir).replace("\\", "/")
-        if rel.endswith(".py"):
-            rel = rel[:-3]
-        if rel.endswith("/__init__"):
-            rel = rel[:-9]
+        rel = rel.removesuffix(".py")
+        rel = rel.removesuffix("/__init__")
         return rel.replace("/", ".")
 
-    def parse_python_file(self, file_path: str, current_module: str) -> Tuple[Set[str], List[Dict[str, Any]]]:
+    def parse_python_file(
+        self, file_path: str, current_module: str
+    ) -> tuple[set[str], list[dict[str, Any]]]:
         """
         Parses a single Python file into an AST, returning imported modules
         and any detected dynamic imports.
@@ -158,13 +166,13 @@ class ASTDependencyAnalyzer:
 
         return import_visitor.imported_modules, dynamic_detector.dynamic_imports
 
-    def build_graph(self, target_dirs: Optional[List[str]] = None) -> DependencyGraph:
+    def build_graph(self, target_dirs: list[str] | None = None) -> DependencyGraph:
         """
         Scans Python files in target directories, parses each into an AST,
         and constructs the full NetworkX directed dependency graph.
         """
         dep_graph = DependencyGraph()
-        module_path_map: Dict[str, str] = {}
+        module_path_map: dict[str, str] = {}
         target_dirs = target_dirs or ["app", "sample_app", "tests", "tests_sample_app"]
 
         # 1. Discover all Python files and register nodes
@@ -201,7 +209,7 @@ class ASTDependencyAnalyzer:
                             if prefix in module_path_map:
                                 dep_graph.add_dependency(mod_name, prefix)
                                 break
-            except Exception as e:
+            except (SyntaxError, ValueError, OSError, UnicodeDecodeError) as e:
                 logger.error(f"Failed to parse AST for {file_path}: {e}")
                 dep_graph.parsing_errors[mod_name] = str(e)
 
