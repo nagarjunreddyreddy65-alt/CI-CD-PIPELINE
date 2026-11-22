@@ -29,3 +29,15 @@ Chronological record of design decisions, implementation phases, benchmarks, and
   - Benchmarking script (`scripts/benchmark_baseline.py`) collecting execution duration, CPU, and RAM metrics.
   - Full CI workflow (`.github/workflows/ci.yml`) supporting Python 3.11 & 3.12 matrices, Ruff linting, Pytest with coverage, Bandit security scanning, and pip-audit.
   - Total test count expanded to 32 tests; 100% passing.
+
+---
+
+## 2026-11-22 — Phase 3: Change and Dependency Analysis Completed
+- **Status:** Complete
+- **Key Deliverables:**
+  - `app/analysis/change_analyzer.py`: Git diff parser, file classifier, and deterministic safety sensitivity detector (auth, billing, migrations, lock files, workflows, unsupported files).
+  - `app/analysis/dependency_analyzer.py`: Native Python `ast` import extractor, dynamic import detector (`__import__`, `importlib.import_module`, `eval`, `exec`), and `NetworkX` directed graph builder.
+  - `app/analysis/test_mapper.py`: Module-to-test mapping engine using graph traversal; enforces Safety Rules 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13.
+  - `app/api/routes/analysis.py`: Added REST endpoints `POST /api/v1/analysis/diff` and `GET /api/v1/analysis/graph`.
+  - Comprehensive unit test suite: Added 22 new tests across change analysis, AST parsing, graph traversal, and safety rule fallback triggers.
+  - Total test count expanded to **54 tests**; 100% passing.

@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.database.session import init_db
 from app.api.routes.health import router as health_router
+from app.api.routes.analysis import router as analysis_router
 
 
 @asynccontextmanager
@@ -104,6 +105,7 @@ def read_root():
 # Router Registration
 # -----------------------------------------------------------------------------
 app.include_router(health_router, prefix=settings.API_V1_PREFIX)
+app.include_router(analysis_router, prefix=settings.API_V1_PREFIX)
 
 
 if __name__ == "__main__":
