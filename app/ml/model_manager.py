@@ -5,8 +5,10 @@ provenance metadata tracking, and synthetic historical bootstrap data generation
 """
 
 import hashlib
+import hmac
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -20,20 +22,25 @@ from app.ml.failure_predictor import FailurePredictor
 from app.ml.runtime_predictor import RuntimePredictor
 
 
-@dataclass
+@dataclass(frozen=True)
 class VerifiedTelemetryDataset:
     """
-    Verified telemetry dataset extracted directly from database entities.
-    Establishes an immutable provenance record ensuring genuine provenance
-    cannot be asserted merely by caller-supplied flags or synthetic numpy arrays.
+    Cryptographically sealed, immutable telemetry dataset extracted directly from database entities.
+    Establishes an unforgeable trust boundary:
+    1. Sealed with HMAC-SHA256 keyed by settings.SECRET_KEY over all array bytes, target bytes,
+       run IDs, and extraction metadata.
+    2. Underlying NumPy arrays are marked read-only (flags.writeable = False) upon creation.
+    3. Frozen dataclass prevents field reassignment or tampering.
+    4. Provides verify_integrity() ensuring caller-supplied arrays or mutated datasets
+       are rejected before training or certification.
     """
 
     X: np.ndarray
     y_fail: np.ndarray
     y_time: np.ndarray
-    run_ids: list[Any]
+    run_ids: tuple[str, ...]
     genuine_runs_count: int
-    provenance_hash: str
+    provenance_signature: str
     extracted_at: str
 
     def __iter__(self):
@@ -44,6 +51,121 @@ class VerifiedTelemetryDataset:
 
     def __getitem__(self, index):
         return (self.X, self.y_fail, self.y_time)[index]
+
+    @property
+    def provenance_hash(self) -> str:
+        """Backward-compatible alias for provenance_signature."""
+        return self.provenance_signature
+
+    @classmethod
+    def create_sealed(
+        cls,
+        X: np.ndarray,
+        y_fail: np.ndarray,
+        y_time: np.ndarray,
+        run_ids: Sequence[Any],
+        genuine_runs_count: int,
+        secret_key: str | None = None,
+        extracted_at: str | None = None,
+    ) -> "VerifiedTelemetryDataset":
+        """
+        Factory method used exclusively by extract_features_from_db_runs() to produce
+        a sealed, read-only, cryptographically signed telemetry dataset.
+        """
+        now_ts = extracted_at or datetime.now(UTC).isoformat()
+        key = secret_key or settings.SECRET_KEY
+
+        # Ensure arrays are contiguous float64/int32/float64
+        X_arr = np.ascontiguousarray(X, dtype=np.float64)
+        y_f_arr = np.ascontiguousarray(y_fail, dtype=np.int32)
+        y_t_arr = np.ascontiguousarray(y_time, dtype=np.float64)
+
+        # Make underlying numpy memory buffers strictly read-only
+        X_arr.flags.writeable = False
+        y_f_arr.flags.writeable = False
+        y_t_arr.flags.writeable = False
+
+        norm_run_ids = tuple(str(rid) for rid in run_ids)
+        sig = cls.compute_signature(
+            X_arr=X_arr,
+            y_fail_arr=y_f_arr,
+            y_time_arr=y_t_arr,
+            run_ids=norm_run_ids,
+            genuine_runs_count=genuine_runs_count,
+            extracted_at=now_ts,
+            secret_key=key,
+        )
+
+        return cls(
+            X=X_arr,
+            y_fail=y_f_arr,
+            y_time=y_t_arr,
+            run_ids=norm_run_ids,
+            genuine_runs_count=genuine_runs_count,
+            provenance_signature=sig,
+            extracted_at=now_ts,
+        )
+
+    @staticmethod
+    def compute_signature(
+        X_arr: np.ndarray,
+        y_fail_arr: np.ndarray,
+        y_time_arr: np.ndarray,
+        run_ids: tuple[str, ...],
+        genuine_runs_count: int,
+        extracted_at: str,
+        secret_key: str,
+    ) -> str:
+        """
+        Computes HMAC-SHA256 cryptographically binding array contents, target labels,
+        run IDs, and extraction metadata to the server secret key.
+        """
+        h = hmac.new(secret_key.encode("utf-8"), digestmod=hashlib.sha256)
+        h.update(X_arr.tobytes())
+        h.update(y_fail_arr.tobytes())
+        h.update(y_time_arr.tobytes())
+        h.update(json.dumps(list(run_ids)).encode("utf-8"))
+        h.update(str(genuine_runs_count).encode("utf-8"))
+        h.update(extracted_at.encode("utf-8"))
+        return h.hexdigest()
+
+    def verify_integrity(self, secret_key: str | None = None) -> tuple[bool, str]:
+        """
+        Verifies that:
+        1. Underlying arrays remain read-only.
+        2. HMAC-SHA256 signature matches all array bytes, run IDs, and extraction metadata.
+        3. No manual tampering or modification has occurred.
+        """
+        key = secret_key or settings.SECRET_KEY
+
+        # Check read-only flags
+        if self.X.flags.writeable or self.y_fail.flags.writeable or self.y_time.flags.writeable:
+            return (
+                False,
+                "Underlying telemetry NumPy arrays have writeable flags enabled (tampering detected).",
+            )
+
+        # Check array lengths match
+        if len(self.X) != len(self.y_fail) or len(self.X) != len(self.y_time):
+            return False, "Telemetry array dimensions do not match."
+
+        expected_sig = self.compute_signature(
+            X_arr=self.X,
+            y_fail_arr=self.y_fail,
+            y_time_arr=self.y_time,
+            run_ids=self.run_ids,
+            genuine_runs_count=self.genuine_runs_count,
+            extracted_at=self.extracted_at,
+            secret_key=key,
+        )
+
+        if not hmac.compare_digest(self.provenance_signature, expected_sig):
+            return (
+                False,
+                "HMAC-SHA256 signature verification failed. Dataset was manually constructed or tampered.",
+            )
+
+        return True, "Dataset integrity verified."
 
 
 class ModelManager:
@@ -270,23 +392,12 @@ class ModelManager:
             y_time.append(round(dur, 2))
             extracted_run_ids.append(getattr(r, "id", f"run-{i}"))
 
-        X_arr = np.array(X_list, dtype=np.float64)
-        y_fail_arr = np.array(y_fail, dtype=np.int32)
-        y_time_arr = np.array(y_time, dtype=np.float64)
-
-        hasher = hashlib.sha256()
-        hasher.update(str(extracted_run_ids).encode("utf-8"))
-        hasher.update(str(len(X_list)).encode("utf-8"))
-        provenance_hash = hasher.hexdigest()
-
-        return VerifiedTelemetryDataset(
-            X=X_arr,
-            y_fail=y_fail_arr,
-            y_time=y_time_arr,
+        return VerifiedTelemetryDataset.create_sealed(
+            X=X_list,
+            y_fail=y_fail,
+            y_time=y_time,
             run_ids=extracted_run_ids,
             genuine_runs_count=len(valid_runs),
-            provenance_hash=provenance_hash,
-            extracted_at=datetime.now(UTC).isoformat(),
         )
 
     def generate_synthetic_historical_data(
@@ -417,26 +528,41 @@ class ModelManager:
                 f"Dataset lacks class diversity (pass={ds_pass}, fail={ds_fail}). Model cannot discriminate failure risk without observing both outcomes."
             )
 
+        if ds_fail < 2:
+            failure_reasons.append(
+                f"Dataset contains too few failures ({ds_fail} < 2) to evaluate holdout discrimination."
+            )
+
+        # 4. Holdout class representation (both PASS and FAILED must be present in holdout set)
+        test_pass = class_dist.get("test_pass_count", 0)
         test_fail = class_dist.get("test_fail_count", 0)
+        criteria["holdout_both_classes_present"] = bool(test_pass >= 1 and test_fail >= 1)
+        if not criteria["holdout_both_classes_present"]:
+            failure_reasons.append(
+                f"Holdout test split lacks class representation (test_pass={test_pass}, test_fail={test_fail}). "
+                "Both PASS and FAILED examples must be present in holdout to evaluate failure discrimination."
+            )
+
+        # 5. ROC-AUC metric validity and threshold
+        auc = fail_metrics.get("roc_auc")
+        criteria["roc_auc_valid_and_acceptable"] = bool(auc is not None and auc >= 0.50)
+        if auc is None:
+            failure_reasons.append(
+                "ROC-AUC is undefined (None) on holdout set. Models cannot be certified without a valid ROC-AUC score."
+            )
+        elif auc < 0.50:
+            failure_reasons.append(
+                f"Holdout ROC-AUC ({auc}) is below random discrimination baseline (0.50)."
+            )
+
+        # 6. Failure recall and F1 threshold
         rec = fail_metrics.get("recall", 0.0)
         f1 = fail_metrics.get("f1_score", 0.0)
-        auc = fail_metrics.get("roc_auc")
-
-        if test_fail > 0:
-            criteria["failure_recall_acceptable"] = bool(rec >= 0.50 or f1 >= 0.50)
-            if not criteria["failure_recall_acceptable"]:
-                failure_reasons.append(
-                    f"Holdout failure recall ({rec}) and F1 ({f1}) below acceptable certification threshold (0.50)"
-                )
-        else:
-            criteria["failure_recall_acceptable"] = True
-
-        if auc is not None:
-            criteria["roc_auc_acceptable"] = bool(auc >= 0.50)
-            if not criteria["roc_auc_acceptable"]:
-                failure_reasons.append(f"ROC-AUC ({auc}) is below random baseline (0.50)")
-        else:
-            criteria["roc_auc_acceptable"] = True
+        criteria["failure_recall_acceptable"] = bool(test_fail >= 1 and (rec >= 0.50 or f1 >= 0.50))
+        if not criteria["failure_recall_acceptable"]:
+            failure_reasons.append(
+                f"Holdout failure recall ({rec}) and F1 ({f1}) below acceptable certification threshold (0.50)."
+            )
 
         # 4. Runtime estimation accuracy
         r2 = time_metrics.get("r2_score", -999.0)
@@ -483,6 +609,11 @@ class ModelManager:
                 raise ValueError(
                     "Trust boundary violation: genuine pipeline telemetry cannot be asserted by caller-supplied arrays or metadata. "
                     "training_data must be a VerifiedTelemetryDataset extracted directly from database entities via extract_features_from_db_runs()."
+                )
+            is_valid, reason = training_data.verify_integrity()
+            if not is_valid:
+                raise ValueError(
+                    f"Trust boundary violation: telemetry dataset cryptographic integrity verification failed: {reason}"
                 )
             if genuine_historical_runs_count < settings.MIN_TRAINING_RUNS:
                 raise ValueError(

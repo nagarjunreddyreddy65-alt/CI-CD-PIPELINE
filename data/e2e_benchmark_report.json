@@ -1,12 +1,12 @@
 {
-  "benchmark_timestamp": "2026-11-22 14:18:48Z",
+  "benchmark_timestamp": "2026-11-22 14:43:39Z",
   "total_available_target_tests": 24,
   "scenarios": {
     "baseline_full_suite": {
-      "duration_sec": 1.219,
+      "duration_sec": 1.167,
       "exit_code": 0,
-      "cpu_percent": 15.1,
-      "memory_mb": 11991.7,
+      "cpu_percent": 32.1,
+      "memory_mb": 11821.9,
       "status": "PASSED",
       "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.23s ==============================\n",
       "tests_executed": 24,
@@ -14,12 +14,12 @@
       "reduction_pct": 0.0
     },
     "optimized_math_change": {
-      "duration_sec": 1.08,
+      "duration_sec": 1.067,
       "exit_code": 0,
-      "cpu_percent": 11.0,
-      "memory_mb": 11995.4,
+      "cpu_percent": 7.0,
+      "memory_mb": 11818.5,
       "status": "PASSED",
-      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.09s ==============================\n",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.06s ==============================\n",
       "tests_executed": 9,
       "decision": "OPTIMIZED",
       "reduction_pct": 62.5,
@@ -205,10 +205,10 @@
   ],
   "all_15_scenarios_passed": true,
   "summary": {
-    "baseline_duration_sec": 1.219,
-    "optimized_duration_sec": 1.08,
-    "runtime_savings_sec": 0.139,
-    "runtime_savings_pct": 11.4,
+    "baseline_duration_sec": 1.167,
+    "optimized_duration_sec": 1.067,
+    "runtime_savings_sec": 0.1,
+    "runtime_savings_pct": 8.6,
     "test_count_reduction_pct_on_leaf": 62.5,
     "safety_policy_compliance_rate_pct": 100.0,
     "total_scenarios_evaluated": 15,

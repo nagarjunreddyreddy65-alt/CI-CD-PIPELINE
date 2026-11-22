@@ -18,12 +18,15 @@ This engineering report documents the verified stabilization and machine learnin
 > This repository represents a completed, verified academic capstone prototype demonstrating intelligent CI/CD test optimization. Probabilistic machine learning predictions (Random Forest Classifier & Regressor) advise the pipeline, but final execution authority is strictly governed by 21 deterministic safety rules. Unsupported claims of enterprise production deployment and IEEE publication have been removed.
 
 ### Key Stabilization Milestones:
-1. **Model Provenance Enforcement, Trust Boundaries & Holdout Certification (P0):**
-   - **Trust Boundary Enforcement:** Caller-supplied flags or raw synthetic numpy arrays can no longer assert genuine provenance. Provenance `GENUINE_PIPELINE_TELEMETRY` strictly requires a `VerifiedTelemetryDataset` extracted directly from database entities via `extract_features_from_db_runs()`.
+1. **Model Provenance Enforcement, Cryptographic Trust Boundaries & Holdout Certification (P0):**
+   - **Cryptographic Trust Boundary Enforcement:** Caller-supplied flags or raw synthetic numpy arrays can no longer assert genuine provenance. Provenance `GENUINE_PIPELINE_TELEMETRY` strictly requires a `VerifiedTelemetryDataset` extracted directly from database entities via `extract_features_from_db_runs()`. The dataset is sealed with HMAC-SHA256 keyed to `settings.SECRET_KEY` binding feature bytes, label bytes, run IDs, genuine run count, and extraction timestamp. The dataclass is frozen (`@dataclass(frozen=True)`), and underlying NumPy arrays have writeable flags disabled (`flags.writeable = False`). Any manual tampering, array modification, or signature mismatch is detected and rejected with `ValueError`.
    - **Explicit Holdout Certification Criteria:** Models are never marked production ready solely because 15 historical records exist. `ModelManager.evaluate_model_certification()` requires:
      - Minimum evidence: $\ge 15$ dataset samples and $\ge 15$ genuine database completed runs.
      - Out-of-sample holdout split: Both models evaluated on `HOLDOUT_TEST_SPLIT` with $\ge 3$ held-out test samples.
-     - Failure discrimination capability: Dataset must contain observed class diversity (both PASS and FAILED runs). When test splits contain failures, holdout recall or F1 must be $\ge 0.50$, and ROC-AUC $\ge 0.50$. Datasets with 0 observed failures are rejected from certification.
+     - Failure discrimination capability: Dataset must contain observed class diversity with $\ge 2$ failures (`ds_fail >= 2`).
+     - Holdout class representation: Both PASS and FAILED examples must be present in the holdout test split (`test_pass >= 1` and `test_fail >= 1`).
+     - Failure recall & F1: Holdout recall or F1 must be $\ge 0.50$.
+     - Defined ROC-AUC: ROC-AUC must not be undefined (`None`) and must be $\ge 0.50$. Datasets with single-class holdout sets or undefined ROC-AUC are rejected from certification and force `FULL_SUITE`.
      - Runtime estimation: Holdout $R^2 \ge 0.0$ (model explains variance better than mean baseline) and $MAE \le 60.0$ seconds.
    - **SHA-256 Artifact Integrity:** `ModelManager.can_predict()` verifies on-disk SHA-256 cryptographic digests of `failure_predictor.joblib` and `runtime_predictor.joblib` against `model_metadata.json`. Tampered or mismatched artifacts force an immediate `FULL_SUITE` fallback (Safety Rule 14).
 2. **Elimination of Training Data Leakage & Fabricated Defaults (P1):**
@@ -169,10 +172,10 @@ Under the governing axiom, the AI model never unilaterally authorizes test skipp
 Features represent strictly pre-execution properties:
 $$X = [f_{\text{files\_changed}}, f_{\text{lines\_added}}, f_{\text{lines\_deleted}}, f_{\text{total\_lines}}, f_{\text{affected\_modules}}, f_{\text{selected\_tests}}, f_{\text{is\_sensitive}}, f_{\text{has\_tests}}, f_{\text{hist\_fail\_rate}}, f_{\text{prev\_duration}}]$$
 
-### Provenance Gating & Trust Boundary
-- **Trust Boundary Enforcement:** A caller cannot assert genuine provenance merely by setting `verified_db_source=True` or `data_source="GENUINE_PIPELINE_TELEMETRY"`. Training data must be an immutable `VerifiedTelemetryDataset` created directly from database entities. Passing raw synthetic arrays raises a fatal `ValueError`.
+### Provenance Gating & Cryptographic Trust Boundary
+- **Cryptographic Sealing & Immutability:** A caller cannot assert genuine provenance merely by setting `verified_db_source=True` or `data_source="GENUINE_PIPELINE_TELEMETRY"`. Training data must be a cryptographically sealed `VerifiedTelemetryDataset` produced by `extract_features_from_db_runs()`. It binds `X`, `y_fail`, `y_time`, `run_ids`, and metadata using HMAC-SHA256 keyed to `settings.SECRET_KEY`. Array buffers are marked read-only (`flags.writeable = False`), and fields cannot be modified (`@dataclass(frozen=True)`). Any forgery or mutation fails `verify_integrity()` and raises a fatal `ValueError`.
 - **Synthetic Bootstrap:** Marked `"provenance": "SYNTHETIC_BOOTSTRAP"`, `"is_production_ready": false`. Barred from authorizing test skipping.
-- **Genuine Telemetry:** Marked `"provenance": "GENUINE_PIPELINE_TELEMETRY"`. Must satisfy explicit holdout certification criteria.
+- **Genuine Telemetry:** Marked `"provenance": "GENUINE_PIPELINE_TELEMETRY"`. Must satisfy explicit holdout certification criteria (both classes in holdout, $\ge 2$ total failures, defined ROC-AUC $\ge 0.50$, recall/F1 $\ge 0.50$, $R^2 \ge 0.0$).
 - **No Data Leakage:** Preceding duration and historical failure rate are computed strictly from runs chronologically prior to the current run.
 
 ---
@@ -180,8 +183,8 @@ $$X = [f_{\text{files\_changed}}, f_{\text{lines\_added}}, f_{\text{lines\_delet
 ## 6. Comprehensive Automated Test Suite Verification
 
 ```text
-======================= 193 passed in 32.84s =======================
-Pass Rate: 100.0% (193 / 193)
+======================= 199 passed in 25.25s =======================
+Pass Rate: 100.0% (199 / 199)
 ```
 
 ### Breakdown of Test Modules:
@@ -192,8 +195,8 @@ Pass Rate: 100.0% (193 / 193)
   - `test_security_service.py` (5)
   - `test_string_ops.py` (3)
   - `test_user_service.py` (4)
-- `tests/` (169 tests):
-  - `test_remediation_p0_p1.py` (27 tests covering model loading, provenance trust boundary, synthetic array rejection, holdout certification failure on single-class data, metadata corruption, SHA-256 integrity verification, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
+- `tests/` (175 tests):
+  - `test_remediation_p0_p1.py` (33 tests covering model loading, provenance trust boundary, HMAC-SHA256 sealing, read-only array immutability, tamper detection, holdout certification failure on zero-failure holdout, too few failures rejection, undefined ROC-AUC rejection, synthetic array rejection, metadata corruption, SHA-256 integrity verification, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
   - `test_safety_policy.py` (25 tests covering all 21 fallback rules)
   - `test_scenarios_e2e.py` (16 end-to-end scenarios)
   - `test_api_authentication.py` (5 tests)
@@ -226,7 +229,7 @@ Pass Rate: 100.0% (193 / 193)
 | :--- | :---: | :--- | :---: | :---: |
 | **Ruff Linter** | 0.17.6 | Entire repository (92 Python files) | 0 errors | **PASSED** |
 | **Ruff Formatter** | 0.17.6 | Entire repository (92 Python files) | 92 files formatted | **PASSED** |
-| **Bandit SAST** | 1.9.4 | `app/` and `sample_app/` (5,130 LOC) | 0 High, 0 Medium, 2 Low | **PASSED (with disclosure)** |
+| **Bandit SAST** | 1.9.4 | `app/` and `sample_app/` (5,446 LOC) | 0 High, 0 Medium, 2 Low | **PASSED (with disclosure)** |
 | **pip-audit SCA** | 2.10.1 | `requirements.txt` dependencies | 0 vulnerabilities | **PASSED** |
 | **Gitleaks** | CI Action | Git commit history | 0 secret leaks | **PASSED** |
 
@@ -244,9 +247,9 @@ Pass Rate: 100.0% (193 / 193)
 
 Measured via `scripts/benchmark_e2e.py`:
 - **Discovered Target Tests:** 24
-- **Baseline Full-Suite Execution Duration:** 1.246s
-- **Optimized Execution Duration (Leaf Change):** 1.083s
-- **Duration Saved on Leaf Change:** 0.163s (13.1% runtime reduction)
+- **Baseline Full-Suite Execution Duration:** 1.167s
+- **Optimized Execution Duration (Leaf Change):** 1.067s
+- **Duration Saved on Leaf Change:** 0.100s (8.6% runtime reduction)
 - **Test Count Reduction on Leaf Change:** **62.5%** (9 of 24 tests executed)
 - **Controlled Defect Detection Rate:** **100.0%** (Injected arithmetic mutation in `math_ops.py` immediately detected by selected tests)
 - **Safety Policy Compliance Rate:** **100.0%** (15 of 15 evaluated scenarios enforced strictly)
@@ -254,7 +257,7 @@ Measured via `scripts/benchmark_e2e.py`:
 
 > [!IMPORTANT]
 > **Distinction Between Test-Count Reduction and Measured Runtime Savings:**
-> On the benchmark's isolated leaf change, the test selector achieved a **62.5% test-count reduction** (executing 9 target tests instead of all 24). The measured wall-clock runtime reduction was **13.1%** (0.163s savings, decreasing from 1.246s to 1.083s). In a lightweight, sub-second test suite, constant process invocation and pytest framework bootstrap overhead account for the majority of wall-clock time. In enterprise CI/CD suites running for tens of minutes, a 62.5% test-count reduction scales directly into proportional compute and wall-clock savings.
+> On the benchmark's isolated leaf change, the test selector achieved a **62.5% test-count reduction** (executing 9 target tests instead of all 24). The measured wall-clock runtime reduction was **8.6%** (0.100s savings, decreasing from 1.167s to 1.067s). In a lightweight, sub-second test suite, constant process invocation and pytest framework bootstrap overhead account for the majority of wall-clock time. In enterprise CI/CD suites running for tens of minutes, a 62.5% test-count reduction scales directly into proportional compute and wall-clock savings.
 
 ---
 

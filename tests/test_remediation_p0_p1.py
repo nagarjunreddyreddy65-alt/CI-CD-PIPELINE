@@ -13,9 +13,11 @@ Covers:
 
 import os
 import tempfile
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -27,7 +29,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import settings
 from app.database.models import Base, ChangedFile, Commit, PipelineRun, Repository
 from app.main import app, lifespan
-from app.ml.model_manager import ModelManager
+from app.ml.model_manager import ModelManager, VerifiedTelemetryDataset
 from app.optimization.decision_engine import DecisionEngine, ExecutionDecision
 
 
@@ -1104,3 +1106,259 @@ def test_caller_supplied_historical_values_cannot_affect_server_decision(client)
     # In test client with seeded 20 runs, decision is based on the 20 DB runs, NOT the 500 passed by caller.
     # When caller passes spoofed inputs, the server ignores them and evaluates purely against the DB.
     assert data["decision"] in ["OPTIMIZED", "FULL_SUITE"]
+
+
+def test_verified_telemetry_dataset_immutability():
+    """
+    Verifies VerifiedTelemetryDataset immutability:
+    1. Underlying feature and label numpy arrays are strictly read-only (flags.writeable is False).
+    2. In-place modification of array elements raises ValueError.
+    3. Dataclass fields cannot be reassigned (FrozenInstanceError).
+    """
+    X = np.ones((5, 10), dtype=np.float64)
+    y_fail = np.zeros(5, dtype=np.int32)
+    y_time = np.full(5, 15.0, dtype=np.float64)
+    run_ids = ("run-1", "run-2", "run-3", "run-4", "run-5")
+
+    dataset = VerifiedTelemetryDataset.create_sealed(
+        X=X,
+        y_fail=y_fail,
+        y_time=y_time,
+        run_ids=run_ids,
+        genuine_runs_count=5,
+    )
+
+    assert dataset.X.flags.writeable is False
+    assert dataset.y_fail.flags.writeable is False
+    assert dataset.y_time.flags.writeable is False
+
+    with pytest.raises(ValueError, match="read-only"):
+        dataset.X[0, 0] = 999.0
+
+    with pytest.raises(ValueError, match="read-only"):
+        dataset.y_fail[0] = 1
+
+    with pytest.raises(ValueError, match="read-only"):
+        dataset.y_time[0] = 99.0
+
+    with pytest.raises(FrozenInstanceError):
+        dataset.genuine_runs_count = 100
+
+    with pytest.raises(FrozenInstanceError):
+        dataset.provenance_signature = "tampered_signature"
+
+
+def test_manually_constructed_dataset_fails_integrity():
+    """
+    Verifies that manually constructed or forged VerifiedTelemetryDataset
+    fails cryptographic integrity verification and is rejected by train_and_persist.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X = np.ones((16, 10), dtype=np.float64)
+        y_fail = np.zeros(16, dtype=np.int32)
+        y_time = np.full(16, 15.0, dtype=np.float64)
+        X.flags.writeable = False
+        y_fail.flags.writeable = False
+        y_time.flags.writeable = False
+
+        # Caller attempts to instantiate a VerifiedTelemetryDataset with a forged signature
+        forged_ds = VerifiedTelemetryDataset(
+            X=X,
+            y_fail=y_fail,
+            y_time=y_time,
+            run_ids=tuple(f"run-{i}" for i in range(16)),
+            genuine_runs_count=16,
+            provenance_signature="0000000000000000000000000000000000000000000000000000000000000000",
+            extracted_at=datetime.now(UTC).isoformat(),
+        )
+
+        is_valid, reason = forged_ds.verify_integrity()
+        assert is_valid is False
+        assert "signature verification failed" in reason
+
+        with pytest.raises(ValueError, match="cryptographic integrity verification failed"):
+            mm.train_and_persist(
+                n_samples=16,
+                data_source="GENUINE_PIPELINE_TELEMETRY",
+                genuine_historical_runs_count=16,
+                training_data=forged_ds,
+                verified_db_source=True,
+            )
+
+
+def test_tampered_dataset_arrays_detected():
+    """
+    Verifies that modifying underlying dataset arrays after sealing
+    is detected by cryptographic verification and rejected by train_and_persist.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X = np.ones((16, 10), dtype=np.float64)
+        y_fail = np.zeros(16, dtype=np.int32)
+        y_time = np.full(16, 15.0, dtype=np.float64)
+        run_ids = tuple(f"run-{i}" for i in range(16))
+
+        dataset = VerifiedTelemetryDataset.create_sealed(
+            X=X,
+            y_fail=y_fail,
+            y_time=y_time,
+            run_ids=run_ids,
+            genuine_runs_count=16,
+        )
+
+        is_valid, _ = dataset.verify_integrity()
+        assert is_valid is True
+
+        # Tampering attempt 1: Re-enabling writeable flag without changing bytes
+        dataset.X.flags.writeable = True
+        is_valid, reason = dataset.verify_integrity()
+        assert is_valid is False
+        assert "writeable flags enabled" in reason
+
+        # Tampering attempt 2: Modifying bytes and re-locking read-only flag
+        dataset.X[0, 0] = 42.0
+        dataset.X.flags.writeable = False
+        is_valid, reason = dataset.verify_integrity()
+        assert is_valid is False
+        assert "signature verification failed" in reason
+
+        with pytest.raises(ValueError, match="cryptographic integrity verification failed"):
+            mm.train_and_persist(
+                n_samples=16,
+                data_source="GENUINE_PIPELINE_TELEMETRY",
+                genuine_historical_runs_count=16,
+                training_data=dataset,
+                verified_db_source=True,
+            )
+
+
+def test_certification_rejected_when_holdout_has_zero_failures():
+    """
+    Verifies evaluate_model_certification rejects certification when the holdout test set
+    has 0 failure samples (test_fail_count == 0). Failure discrimination cannot be evaluated.
+    """
+    mm = ModelManager()
+    class_dist = {
+        "dataset_pass_count": 18,
+        "dataset_fail_count": 2,
+        "train_pass_count": 14,
+        "train_fail_count": 2,
+        "test_pass_count": 4,
+        "test_fail_count": 0,
+    }
+    fail_metrics = {
+        "evaluated_on": "HOLDOUT_TEST_SPLIT",
+        "test_samples": 4,
+        "accuracy": 1.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "roc_auc": None,
+        "class_distribution": class_dist,
+    }
+    time_metrics = {
+        "evaluated_on": "HOLDOUT_TEST_SPLIT",
+        "test_samples": 4,
+        "mae": 5.0,
+        "r2_score": 0.5,
+    }
+
+    is_certified, criteria, failure_reasons = mm.evaluate_model_certification(
+        fail_metrics=fail_metrics,
+        time_metrics=time_metrics,
+        sample_count=20,
+        genuine_historical_runs_count=20,
+    )
+
+    assert is_certified is False
+    assert criteria["holdout_both_classes_present"] is False
+    assert any(
+        "Both PASS and FAILED examples must be present in holdout" in r for r in failure_reasons
+    )
+
+
+def test_certification_rejected_when_too_few_failures_in_dataset():
+    """
+    Verifies evaluate_model_certification rejects certification when total dataset has < 2 failures.
+    Insufficient failure evidence prevents reliable holdout validation and forces FULL_SUITE.
+    """
+    mm = ModelManager()
+    class_dist = {
+        "dataset_pass_count": 19,
+        "dataset_fail_count": 1,
+        "train_pass_count": 15,
+        "train_fail_count": 1,
+        "test_pass_count": 4,
+        "test_fail_count": 0,
+    }
+    fail_metrics = {
+        "evaluated_on": "HOLDOUT_TEST_SPLIT",
+        "test_samples": 4,
+        "accuracy": 1.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "roc_auc": None,
+        "class_distribution": class_dist,
+    }
+    time_metrics = {
+        "evaluated_on": "HOLDOUT_TEST_SPLIT",
+        "test_samples": 4,
+        "mae": 5.0,
+        "r2_score": 0.5,
+    }
+
+    is_certified, _criteria, failure_reasons = mm.evaluate_model_certification(
+        fail_metrics=fail_metrics,
+        time_metrics=time_metrics,
+        sample_count=20,
+        genuine_historical_runs_count=20,
+    )
+
+    assert is_certified is False
+    assert any("too few failures (1 < 2)" in r for r in failure_reasons)
+
+
+def test_certification_rejected_when_roc_auc_undefined():
+    """
+    Verifies evaluate_model_certification rejects certification when holdout ROC-AUC is undefined (None).
+    Failure model cannot be certified without a valid ROC-AUC score.
+    """
+    mm = ModelManager()
+    class_dist = {
+        "dataset_pass_count": 16,
+        "dataset_fail_count": 4,
+        "train_pass_count": 13,
+        "train_fail_count": 3,
+        "test_pass_count": 3,
+        "test_fail_count": 1,
+    }
+    # ROC-AUC is explicitly None
+    fail_metrics = {
+        "evaluated_on": "HOLDOUT_TEST_SPLIT",
+        "test_samples": 4,
+        "accuracy": 0.75,
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1_score": 0.55,
+        "roc_auc": None,
+        "class_distribution": class_dist,
+    }
+    time_metrics = {
+        "evaluated_on": "HOLDOUT_TEST_SPLIT",
+        "test_samples": 4,
+        "mae": 8.0,
+        "r2_score": 0.4,
+    }
+
+    is_certified, criteria, failure_reasons = mm.evaluate_model_certification(
+        fail_metrics=fail_metrics,
+        time_metrics=time_metrics,
+        sample_count=20,
+        genuine_historical_runs_count=20,
+    )
+
+    assert is_certified is False
+    assert criteria["roc_auc_valid_and_acceptable"] is False
+    assert any("ROC-AUC is undefined (None)" in r for r in failure_reasons)
