@@ -70,17 +70,22 @@ class RuntimePredictor:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    def predict(self, features: PipelineFeatures) -> RuntimePredictionResult:
+    def predict(self, features: Any) -> RuntimePredictionResult:
         """Predicts execution duration in seconds with an estimated uncertainty band."""
         now_utc = datetime.now(timezone.utc).isoformat()
 
+        if isinstance(features, np.ndarray):
+            arr = features.flatten()
+            prev_dur = float(arr[9]) if len(arr) > 9 else 30.0
+            X_input = arr.reshape(1, -1)
+        else:
+            prev_dur = features.previous_execution_duration
+            X_input = features.to_array()
+
         if not self.is_trained:
             # Fallback baseline: scale duration based on selected tests count
-            base_dur = max(2.0, features.previous_execution_duration)
-            if features.selected_tests_count > 0:
-                est = round(base_dur * (features.selected_tests_count / max(1, features.selected_tests_count)), 2)
-            else:
-                est = base_dur
+            base_dur = max(2.0, prev_dur)
+            est = base_dur
 
             return RuntimePredictionResult(
                 predicted_duration_sec=est,
@@ -90,7 +95,6 @@ class RuntimePredictor:
                 prediction_timestamp=now_utc,
             )
 
-        X_input = features.to_array()
         pred_val = float(self.model.predict(X_input)[0])
         bounded_pred = max(1.0, round(pred_val, 2))
 

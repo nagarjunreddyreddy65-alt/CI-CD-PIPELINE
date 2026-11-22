@@ -123,3 +123,24 @@ class ModelManager:
                 logger.error(f"Failed to load ML artifacts from {self.registry_dir}: {e}")
                 return False
         return False
+
+    def get_models_status(self) -> Dict[str, Any]:
+        """Returns readiness and artifact presence for predictive models."""
+        fail_path = os.path.join(self.registry_dir, "failure_predictor.joblib")
+        time_path = os.path.join(self.registry_dir, "runtime_predictor.joblib")
+
+        return {
+            "failure_predictor": {
+                "is_trained": self.failure_predictor.is_trained,
+                "version": self.failure_predictor.model_version,
+                "model_file_exists": os.path.exists(fail_path),
+                "artifact_path": fail_path,
+            },
+            "runtime_predictor": {
+                "is_trained": self.runtime_predictor.is_trained,
+                "version": self.runtime_predictor.model_version,
+                "model_file_exists": os.path.exists(time_path),
+                "artifact_path": time_path,
+            },
+        }
+

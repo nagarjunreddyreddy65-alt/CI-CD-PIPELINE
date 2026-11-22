@@ -1,0 +1,398 @@
+"""
+Deterministic Decision Engine.
+Coordinates AST dependency mapping, Machine Learning predictions, and Deterministic Safety Policy
+to produce safe, auditable execution plans for CI/CD runners.
+
+Core Axiom:
+"AI predicts failure risk & duration. Deterministic safety rules decide execution."
+"""
+
+from typing import List, Dict, Any, Optional
+from enum import Enum
+from dataclasses import dataclass, field
+import json
+import os
+import time
+
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.logging import logger
+from app.analysis.change_analyzer import ChangeAnalyzer, ChangeAnalysisResult
+from app.analysis.dependency_analyzer import ASTDependencyAnalyzer
+from app.analysis.test_mapper import TestDependencyMapper, TestMappingResult
+from app.ml.feature_extractor import FeatureExtractor, PipelineFeatures
+from app.ml.model_manager import ModelManager
+from app.optimization.safety_policy import (
+    SafetyPolicyEvaluator,
+    SafetyContext,
+    SafetyEvaluationResult,
+    SafetyRuleCode,
+)
+from app.optimization.test_selector import TestSelector, SelectedTestPlan
+from app.database.models import (
+    PipelineRun,
+    ExecutionPlan,
+    Prediction,
+    AuditLog,
+    Repository,
+    Commit,
+    ChangedFile,
+)
+
+
+class ExecutionDecision(str, Enum):
+    OPTIMIZED = "OPTIMIZED"
+    FULL_SUITE = "FULL_SUITE"
+
+
+@dataclass
+class ExecutionPlanResult:
+    __test__ = False  # Prevent Pytest collection
+    decision: ExecutionDecision
+    decision_reason: str
+    is_optimized: bool
+    fallback_triggered: bool
+    fallback_reason: Optional[str]
+    selected_tests: List[str]
+    selected_test_files: List[str]
+    pytest_command: str
+    total_tests_count: int
+    selected_tests_count: int
+    tests_reduction_pct: float
+    predicted_failure_probability: float
+    predicted_failure_class: int
+    predicted_duration_sec: float
+    estimated_time_saved_sec: float
+    triggered_safety_rules: List[str]
+    features: Dict[str, Any]
+    model_version: str
+    pipeline_run_id: Optional[str] = None
+    plan_id: Optional[str] = None
+
+
+class DecisionEngine:
+    __test__ = False  # Prevent Pytest collection
+    """
+    Main orchestrator for generating deterministic, ML-informed CI/CD execution plans.
+    """
+
+    def __init__(
+        self,
+        root_dir: Optional[str] = None,
+        model_manager: Optional[ModelManager] = None,
+        safety_evaluator: Optional[SafetyPolicyEvaluator] = None,
+        test_selector: Optional[TestSelector] = None,
+    ):
+        self.root_dir = os.path.abspath(root_dir or ".")
+        self.change_analyzer = ChangeAnalyzer(self.root_dir)
+        self.test_mapper = TestDependencyMapper(self.root_dir)
+        self.model_manager = model_manager or ModelManager()
+        self.safety_evaluator = safety_evaluator or SafetyPolicyEvaluator()
+        self.test_selector = test_selector or TestSelector()
+        self.feature_extractor = FeatureExtractor()
+
+    def generate_plan(
+        self,
+        changed_file_entries: List[Dict[str, Any]],
+        historical_failure_rate: float = 0.05,
+        previous_execution_duration: float = 25.0,
+        historical_runs_count: int = 20,
+        risk_threshold: float = 0.50,
+        db: Optional[Session] = None,
+        repository_name: Optional[str] = None,
+        commit_hash: Optional[str] = None,
+        branch: str = "main",
+        author_name: str = "Developer",
+        author_email: str = "dev@example.com",
+        commit_message: str = "Code update",
+    ) -> ExecutionPlanResult:
+        """
+        Executes end-to-end plan generation workflow:
+        1. Classifies changed files.
+        2. Discovers tests and maps dependencies via AST.
+        3. Extracts pre-execution ML features.
+        4. Runs ML failure risk & runtime prediction.
+        5. Evaluates 21 Deterministic Safety Policy rules.
+        6. Selects tests & computes reduction metrics.
+        7. Persists execution record to DB if session provided.
+        """
+        all_tests = self.test_mapper.discover_all_test_functions()
+        total_tests = len(all_tests)
+
+        # Step 1: Change Analysis
+        change_res: ChangeAnalysisResult = self.change_analyzer.analyze_changes(changed_file_entries)
+
+        # Step 2: AST Dependency & Test Mapping
+        mapping_res: TestMappingResult = self.test_mapper.map_changes_to_tests(changed_file_entries)
+
+        selected_candidate_tests = mapping_res.affected_test_identifiers
+        affected_modules = mapping_res.affected_modules
+
+        # Step 3: Feature Extraction (guaranteed pre-execution only)
+        features: PipelineFeatures = self.feature_extractor.extract(
+            changed_files_count=change_res.total_changed_files,
+            lines_added=change_res.total_lines_added,
+            lines_deleted=change_res.total_lines_deleted,
+            affected_modules_count=len(affected_modules),
+            selected_tests_count=len(selected_candidate_tests),
+            is_sensitive_change=change_res.is_sensitive,
+            has_test_file_changes=change_res.has_test_changes,
+            historical_failure_rate=historical_failure_rate,
+            previous_execution_duration=previous_execution_duration,
+        )
+
+        # Step 4: ML Predictions
+        fail_res = self.model_manager.failure_predictor.predict(features)
+        fail_prob = fail_res.predicted_failure_probability
+        fail_class = fail_res.predicted_failure_class
+        confidence = fail_res.confidence
+
+        runtime_res = self.model_manager.runtime_predictor.predict(features)
+        pred_duration = runtime_res.predicted_duration_sec
+
+        # Check model artifact presence and compatibility
+        models_status = self.model_manager.get_models_status()
+        model_artifacts_exist = (
+            models_status["failure_predictor"]["model_file_exists"] and
+            models_status["runtime_predictor"]["model_file_exists"]
+        )
+
+        # Step 5: Construct Safety Context & Evaluate Deterministic Rules
+        # Check AST parse and dynamic import status from mapping
+        has_ast_error = "Safety Rule 9" in (mapping_res.fallback_reason or "")
+        has_dynamic_imp = "Safety Rule 10" in (mapping_res.fallback_reason or "")
+        has_circular = "Safety Rule 11" in (mapping_res.fallback_reason or "")
+        has_unmapped = "Safety Rule 12" in (mapping_res.fallback_reason or "")
+        is_empty_selection = len(selected_candidate_tests) == 0 and change_res.total_changed_files > 0
+
+        safety_ctx = SafetyContext(
+            has_migration_changes=change_res.has_migration_changes,
+            has_auth_changes=change_res.has_auth_changes,
+            has_payment_changes=change_res.has_payment_changes,
+            has_crypto_changes=change_res.has_crypto_changes,
+            has_dependency_manifest_changes=change_res.has_dependency_manifest_changes,
+            has_lock_file_changes=change_res.has_lock_file_changes,
+            has_ci_workflow_changes=change_res.has_ci_workflow_changes,
+            has_unsupported_files=change_res.has_unsupported_files,
+            has_ast_syntax_error=has_ast_error,
+            has_dynamic_import=has_dynamic_imp,
+            has_circular_dependency=has_circular,
+            has_unmapped_tests=has_unmapped,
+            is_test_selection_empty=is_empty_selection,
+            non_empty_code_change=(change_res.total_changed_files > 0),
+            model_artifact_exists=model_artifacts_exist,
+            model_version_compatible=True,
+            predicted_probability=fail_prob,
+            prediction_confidence=confidence,
+            historical_runs_count=historical_runs_count,
+            api_reachable=True,
+            github_api_success=True,
+            unverifiable_safety_detected=False,
+            custom_fallback_reason=mapping_res.fallback_reason if mapping_res.fallback_required else None,
+        )
+
+        safety_res: SafetyEvaluationResult = self.safety_evaluator.evaluate(safety_ctx)
+
+        # High risk threshold policy check (Risk threshold evaluation)
+        high_risk_triggered = False
+        if fail_prob >= risk_threshold:
+            high_risk_triggered = True
+
+        # Final Decision Formulation
+        triggered_rules_names = [t.rule_code.value for t in safety_res.triggered_rules]
+
+        if not safety_res.is_safe_to_optimize:
+            decision = ExecutionDecision.FULL_SUITE
+            fallback_triggered = True
+            fallback_reason = safety_res.primary_fallback_reason
+            decision_reason = (
+                f"Full test suite required by deterministic safety policy: {fallback_reason}."
+            )
+            force_full = True
+        elif high_risk_triggered:
+            decision = ExecutionDecision.FULL_SUITE
+            fallback_triggered = True
+            fallback_reason = f"High Failure Risk Policy: Predicted failure probability {fail_prob:.1%} >= threshold {risk_threshold:.1%}"
+            decision_reason = (
+                f"Full test suite triggered as safety precaution due to high predicted pipeline failure risk "
+                f"({fail_prob:.1%})."
+            )
+            force_full = True
+            triggered_rules_names.append("HIGH_RISK_THRESHOLD_EXCEEDED")
+        else:
+            decision = ExecutionDecision.OPTIMIZED
+            fallback_triggered = False
+            fallback_reason = None
+            decision_reason = (
+                f"Optimized test execution authorized. Code changes are non-sensitive and mapped to "
+                f"{len(selected_candidate_tests)} affected tests (Predicted failure risk: {fail_prob:.1%})."
+            )
+            force_full = False
+
+        # Step 6: Test Selection & Command Formatting
+        selected_plan: SelectedTestPlan = self.test_selector.build_test_plan(
+            selected_identifiers=selected_candidate_tests if not force_full else all_tests,
+            all_repository_tests=all_tests,
+            force_full_suite=force_full,
+        )
+
+        # Calculate estimated time saved
+        # If optimized: saved time = (baseline_duration) * (reduction_pct / 100)
+        baseline_time = previous_execution_duration if previous_execution_duration > 0 else 30.0
+        if decision == ExecutionDecision.OPTIMIZED:
+            estimated_time_saved = round(baseline_time * (selected_plan.reduction_percentage / 100.0), 2)
+        else:
+            estimated_time_saved = 0.0
+
+        plan_result = ExecutionPlanResult(
+            decision=decision,
+            decision_reason=decision_reason,
+            is_optimized=(decision == ExecutionDecision.OPTIMIZED),
+            fallback_triggered=fallback_triggered,
+            fallback_reason=fallback_reason,
+            selected_tests=selected_plan.selected_test_identifiers,
+            selected_test_files=selected_plan.selected_test_files,
+            pytest_command=selected_plan.pytest_command_string,
+            total_tests_count=selected_plan.total_tests_count,
+            selected_tests_count=selected_plan.selected_tests_count,
+            tests_reduction_pct=selected_plan.reduction_percentage,
+            predicted_failure_probability=fail_prob,
+            predicted_failure_class=fail_class,
+            predicted_duration_sec=pred_duration,
+            estimated_time_saved_sec=estimated_time_saved,
+            triggered_safety_rules=triggered_rules_names,
+            features=features.to_dict(),
+            model_version=models_status["failure_predictor"]["version"],
+        )
+
+        # Step 7: Database Persistence (if session provided)
+        if db is not None:
+            self._persist_to_db(
+                db=db,
+                plan_result=plan_result,
+                changed_file_entries=changed_file_entries,
+                repository_name=repository_name or "AutonomousDevOps/CI-CD-PIPELINE",
+                commit_hash=commit_hash or f"commit-{int(time.time())}",
+                branch=branch,
+                author_name=author_name,
+                author_email=author_email,
+                commit_message=commit_message,
+            )
+
+        return plan_result
+
+    def _persist_to_db(
+        self,
+        db: Session,
+        plan_result: ExecutionPlanResult,
+        changed_file_entries: List[Dict[str, Any]],
+        repository_name: str,
+        commit_hash: str,
+        branch: str,
+        author_name: str,
+        author_email: str,
+        commit_message: str,
+    ) -> None:
+        """Persists repository, commit, pipeline run, execution plan, and audit logs to PostgreSQL/SQLite."""
+        try:
+            # 1. Get or create repository
+            repo = db.query(Repository).filter(Repository.name == repository_name).first()
+            if not repo:
+                owner = repository_name.split("/")[0] if "/" in repository_name else "AutonomousDevOps"
+                repo = Repository(
+                    name=repository_name,
+                    owner=owner,
+                    clone_url=f"https://github.com/{repository_name}",
+                    default_branch=branch,
+                )
+                db.add(repo)
+                db.flush()
+
+            # 2. Get or create commit
+            commit = db.query(Commit).filter(
+                Commit.repository_id == repo.id,
+                Commit.commit_hash == commit_hash
+            ).first()
+            if not commit:
+                commit = Commit(
+                    repository_id=repo.id,
+                    commit_hash=commit_hash,
+                    branch=branch,
+                    author_name=author_name,
+                    author_email=author_email,
+                    message=commit_message,
+                )
+                db.add(commit)
+                db.flush()
+
+                # Record changed files
+                for item in changed_file_entries:
+                    cf = ChangedFile(
+                        commit_id=commit.id,
+                        file_path=item.get("file_path", ""),
+                        change_type=item.get("change_type", "MODIFIED"),
+                        lines_added=item.get("lines_added", 0),
+                        lines_deleted=item.get("lines_deleted", 0),
+                        is_sensitive=plan_result.fallback_triggered,
+                    )
+                    db.add(cf)
+
+            # 3. Create PipelineRun
+            pipeline_run = PipelineRun(
+                repository_id=repo.id,
+                commit_id=commit.id,
+                workflow_name="Autonomous DevOps CI",
+                status="RUNNING",
+                trigger_event="push",
+                is_optimized=plan_result.is_optimized,
+                fallback_triggered=plan_result.fallback_triggered,
+                fallback_reason=plan_result.fallback_reason,
+                total_duration_sec=0.0,
+            )
+            db.add(pipeline_run)
+            db.flush()
+
+            # 4. Create ExecutionPlan
+            plan = ExecutionPlan(
+                pipeline_run_id=pipeline_run.id,
+                decision=plan_result.decision.value,
+                decision_reason=plan_result.decision_reason,
+                selected_tests_count=plan_result.selected_tests_count,
+                total_tests_count=plan_result.total_tests_count,
+                tests_reduction_pct=plan_result.tests_reduction_pct,
+                selected_tests_json=json.dumps(plan_result.selected_tests),
+                safety_rule_triggered=",".join(plan_result.triggered_safety_rules) if plan_result.triggered_safety_rules else None,
+            )
+            db.add(plan)
+            db.flush()
+
+            # 5. Create Prediction
+            pred = Prediction(
+                pipeline_run_id=pipeline_run.id,
+                model_version=plan_result.model_version,
+                predicted_failure_probability=plan_result.predicted_failure_probability,
+                predicted_failure_class=plan_result.predicted_failure_class,
+                predicted_duration_sec=plan_result.predicted_duration_sec,
+                features_json=json.dumps(plan_result.features),
+            )
+            db.add(pred)
+
+            # 6. Create AuditLog
+            audit = AuditLog(
+                event_type="EXECUTION_PLAN_GENERATED",
+                entity_type="ExecutionPlan",
+                entity_id=plan.id,
+                details=f"Decision: {plan_result.decision.value}. Reason: {plan_result.decision_reason}",
+            )
+            db.add(audit)
+
+            db.commit()
+
+            plan_result.pipeline_run_id = pipeline_run.id
+            plan_result.plan_id = plan.id
+            logger.info(f"Persisted execution plan {plan.id} for run {pipeline_run.id} (Decision: {plan_result.decision.value})")
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error persisting execution plan to DB: {e}")

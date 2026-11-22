@@ -94,3 +94,8 @@ class FeatureExtractor:
             historical_failure_rate=round(bounded_failure_rate, 4),
             previous_execution_duration=round(bounded_duration, 2),
         )
+
+    @classmethod
+    def extract(cls, *args, **kwargs) -> PipelineFeatures:
+        """Convenience alias for extract_features."""
+        return cls.extract_features(*args, **kwargs)

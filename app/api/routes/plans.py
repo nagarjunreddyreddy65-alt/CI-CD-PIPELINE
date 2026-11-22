@@ -1,0 +1,169 @@
+"""
+API Router for CI/CD Execution Plans.
+Provides endpoints to generate, query, and audit deterministic optimization plans.
+"""
+
+from typing import List, Dict, Any, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+import json
+
+from app.database.session import get_db
+from app.database.models import ExecutionPlan, PipelineRun
+from app.optimization.decision_engine import DecisionEngine, ExecutionPlanResult
+from app.core.config import settings
+
+router = APIRouter(prefix="/plans", tags=["Execution Plans"])
+
+
+class ChangedFileItem(BaseModel):
+    file_path: str = Field(..., json_schema_extra={"example": "sample_app/utils/math_ops.py"})
+    change_type: str = Field("MODIFIED", json_schema_extra={"example": "MODIFIED"})
+    lines_added: int = Field(5, ge=0)
+    lines_deleted: int = Field(2, ge=0)
+
+
+class PlanGenerationRequest(BaseModel):
+    repository_name: str = Field("AutonomousDevOps/CI-CD-PIPELINE", json_schema_extra={"example": "AutonomousDevOps/CI-CD-PIPELINE"})
+    commit_hash: str = Field(..., json_schema_extra={"example": "c81a293f0b4d"})
+    branch: str = Field("main", json_schema_extra={"example": "main"})
+    author_name: str = Field("MCA Student", json_schema_extra={"example": "MCA Student"})
+    author_email: str = Field("student@example.edu", json_schema_extra={"example": "student@example.edu"})
+    commit_message: str = Field("Update math operation utility functions", json_schema_extra={"example": "Update math ops"})
+    changed_files: List[ChangedFileItem]
+    historical_failure_rate: float = Field(0.05, ge=0.0, le=1.0)
+    previous_execution_duration: float = Field(25.0, ge=0.0)
+    historical_runs_count: int = Field(20, ge=0)
+    risk_threshold: float = Field(0.50, ge=0.0, le=1.0)
+
+
+class PlanGenerationResponse(BaseModel):
+    plan_id: Optional[str]
+    pipeline_run_id: Optional[str]
+    decision: str
+    decision_reason: str
+    is_optimized: bool
+    fallback_triggered: bool
+    fallback_reason: Optional[str]
+    selected_tests_count: int
+    total_tests_count: int
+    tests_reduction_pct: float
+    selected_tests: List[str]
+    pytest_command: str
+    predicted_failure_probability: float
+    predicted_duration_sec: float
+    estimated_time_saved_sec: float
+    triggered_safety_rules: List[str]
+    model_version: str
+
+
+@router.post("/generate", response_model=PlanGenerationResponse, status_code=status.HTTP_200_OK)
+def generate_execution_plan(
+    req: PlanGenerationRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Generates a deterministic CI/CD execution plan:
+    1. Analyzes changed files and AST dependencies.
+    2. Runs ML failure risk & runtime prediction.
+    3. Evaluates 21 Safety Policy rules.
+    4. Issues OPTIMIZED or FULL_SUITE plan and persists to DB.
+    """
+    engine = DecisionEngine(root_dir=".")
+
+    file_entries = [
+        {
+            "file_path": cf.file_path,
+            "change_type": cf.change_type,
+            "lines_added": cf.lines_added,
+            "lines_deleted": cf.lines_deleted,
+        }
+        for cf in req.changed_files
+    ]
+
+    plan_result: ExecutionPlanResult = engine.generate_plan(
+        changed_file_entries=file_entries,
+        historical_failure_rate=req.historical_failure_rate,
+        previous_execution_duration=req.previous_execution_duration,
+        historical_runs_count=req.historical_runs_count,
+        risk_threshold=req.risk_threshold,
+        db=db,
+        repository_name=req.repository_name,
+        commit_hash=req.commit_hash,
+        branch=req.branch,
+        author_name=req.author_name,
+        author_email=req.author_email,
+        commit_message=req.commit_message,
+    )
+
+    return PlanGenerationResponse(
+        plan_id=plan_result.plan_id,
+        pipeline_run_id=plan_result.pipeline_run_id,
+        decision=plan_result.decision.value,
+        decision_reason=plan_result.decision_reason,
+        is_optimized=plan_result.is_optimized,
+        fallback_triggered=plan_result.fallback_triggered,
+        fallback_reason=plan_result.fallback_reason,
+        selected_tests_count=plan_result.selected_tests_count,
+        total_tests_count=plan_result.total_tests_count,
+        tests_reduction_pct=plan_result.tests_reduction_pct,
+        selected_tests=plan_result.selected_tests,
+        pytest_command=plan_result.pytest_command,
+        predicted_failure_probability=plan_result.predicted_failure_probability,
+        predicted_duration_sec=plan_result.predicted_duration_sec,
+        estimated_time_saved_sec=plan_result.estimated_time_saved_sec,
+        triggered_safety_rules=plan_result.triggered_safety_rules,
+        model_version=plan_result.model_version,
+    )
+
+
+@router.get("/{plan_id}")
+def get_execution_plan(plan_id: str, db: Session = Depends(get_db)):
+    """Retrieves an existing execution plan by ID."""
+    plan = db.query(ExecutionPlan).filter(ExecutionPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail=f"Execution plan '{plan_id}' not found")
+
+    selected_tests = []
+    try:
+        selected_tests = json.loads(plan.selected_tests_json)
+    except Exception:
+        pass
+
+    return {
+        "id": plan.id,
+        "pipeline_run_id": plan.pipeline_run_id,
+        "decision": plan.decision,
+        "decision_reason": plan.decision_reason,
+        "selected_tests_count": plan.selected_tests_count,
+        "total_tests_count": plan.total_tests_count,
+        "tests_reduction_pct": plan.tests_reduction_pct,
+        "selected_tests": selected_tests,
+        "safety_rule_triggered": plan.safety_rule_triggered,
+        "created_at": plan.created_at.isoformat() if plan.created_at else None,
+    }
+
+
+@router.get("")
+def list_execution_plans(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Lists recent execution plans with pagination."""
+    plans = db.query(ExecutionPlan).order_by(ExecutionPlan.created_at.desc()).offset(offset).limit(limit).all()
+    results = []
+    for p in plans:
+        results.append({
+            "id": p.id,
+            "pipeline_run_id": p.pipeline_run_id,
+            "decision": p.decision,
+            "decision_reason": p.decision_reason,
+            "selected_tests_count": p.selected_tests_count,
+            "total_tests_count": p.total_tests_count,
+            "tests_reduction_pct": p.tests_reduction_pct,
+            "safety_rule_triggered": p.safety_rule_triggered,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        })
+    return {"plans": results, "count": len(results), "limit": limit, "offset": offset}

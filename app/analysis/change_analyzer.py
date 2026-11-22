@@ -42,6 +42,28 @@ class ChangeAnalysisResult:
     has_ci_workflow_changes: bool = False
     has_unsupported_files: bool = False
 
+    @property
+    def total_changed_files(self) -> int:
+        return self.total_files_changed
+
+    @property
+    def is_sensitive(self) -> bool:
+        return bool(self.sensitive_triggers) or (
+            self.has_migration_changes or
+            self.has_auth_changes or
+            self.has_payment_changes or
+            self.has_crypto_changes or
+            self.has_dependency_manifest_changes or
+            self.has_lock_file_changes or
+            self.has_ci_workflow_changes or
+            self.has_unsupported_files
+        )
+
+    @property
+    def has_test_changes(self) -> bool:
+        return len(self.test_files_changed) > 0
+
+
 
 class ChangeAnalyzer:
     """
@@ -174,7 +196,7 @@ class ChangeAnalyzer:
         has_unsupported = False
 
         for entry in file_entries:
-            path = entry.get("path", "").strip()
+            path = (entry.get("path") or entry.get("file_path") or "").strip()
             if not path:
                 continue
 

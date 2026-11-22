@@ -55,3 +55,17 @@ Chronological record of design decisions, implementation phases, benchmarks, and
   - Added 14 new tests in `tests/test_feature_extractor.py`, `tests/test_ml_models.py`, `tests/test_model_manager.py`, and `tests/test_predictions_api.py`.
   - Total test count expanded to **68 tests**; 100% passing.
 
+---
+
+## 2026-11-22 — Phase 5: Deterministic Optimization & Decision Engine Completed
+- **Status:** Complete
+- **Key Deliverables:**
+  - `app/optimization/safety_policy.py`: Full programmatic evaluation of all 21 Safety Policy rules cataloged and enforced with explicit trigger attribution.
+  - `app/optimization/test_selector.py`: Formats selected test identifiers into structured pytest commands and computes exact suite reduction percentage.
+  - `app/optimization/decision_engine.py`: Orchestrates change analysis, AST dependency mapping, ML predictions, and safety rules to produce auditable `OPTIMIZED` or `FULL_SUITE` plans, with automatic database persistence (`PipelineRun`, `ExecutionPlan`, `Prediction`, `AuditLog`).
+  - `app/api/routes/plans.py`: REST endpoints `POST /api/v1/plans/generate`, `GET /api/v1/plans/{plan_id}`, and `GET /api/v1/plans`.
+  - `scripts/run_optimized_ci.py`: Standalone GitHub Actions CI runner script with built-in Rule 19 fallback protection and psutil telemetry collection.
+  - Added 36 new tests in `tests/test_safety_policy.py` (covering all 21 rules individually), `tests/test_test_selector.py`, `tests/test_decision_engine.py`, and `tests/test_plans_api.py`.
+  - Total test count expanded to **104 tests**; 100% passing.
+
+

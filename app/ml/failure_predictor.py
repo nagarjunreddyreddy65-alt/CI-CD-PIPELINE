@@ -86,14 +86,24 @@ class FailurePredictor:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    def predict(self, features: PipelineFeatures) -> FailurePredictionResult:
+    def predict(self, features: Any) -> FailurePredictionResult:
         """Generates failure probability and risk classification for incoming features."""
         now_utc = datetime.now(timezone.utc).isoformat()
 
+        if isinstance(features, np.ndarray):
+            arr = features.flatten()
+            hist_rate = float(arr[8]) if len(arr) > 8 else 0.05
+            is_sens = int(arr[6]) if len(arr) > 6 else 0
+            X_input = arr.reshape(1, -1)
+        else:
+            hist_rate = features.historical_failure_rate
+            is_sens = features.is_sensitive_change
+            X_input = features.to_array()
+
         if not self.is_trained:
             # Fallback baseline prediction when model is not yet trained
-            prob = max(0.05, features.historical_failure_rate)
-            if features.is_sensitive_change:
+            prob = max(0.05, hist_rate)
+            if is_sens:
                 prob = min(0.95, prob + 0.40)
             pred_class = 1 if prob >= self.risk_threshold else 0
             conf = round(abs(prob - 0.5) * 2.0, 3)
@@ -107,7 +117,6 @@ class FailurePredictor:
                 prediction_timestamp=now_utc,
             )
 
-        X_input = features.to_array()
         prob_array = self.model.predict_proba(X_input)[0]
         # Probability of class 1 (Failure)
         fail_prob = float(prob_array[1]) if len(prob_array) > 1 else 0.05
