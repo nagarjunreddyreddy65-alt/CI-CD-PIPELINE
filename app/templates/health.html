@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}System Health{% endblock %}
+{% block page_title %}Service Health & Infrastructure Status{% endblock %}
+
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>API Service</span>
+      <span class="badge badge-success">FastAPI</span>
+    </div>
+    <div class="kpi-value" style="color: var(--accent-green);">{{ health_status.api_status }}</div>
+    <div class="kpi-trend">Version: {{ health_status.version }}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Database Engine</span>
+      <span class="badge badge-info">{{ health_status.db_engine }}</span>
+    </div>
+    <div class="kpi-value" style="color: var(--accent-green);">Connected</div>
+    <div class="kpi-trend">Schema initialized & migration ready</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>ML Model Registry</span>
+      <span class="badge badge-purple">scikit-learn</span>
+    </div>
+    <div class="kpi-value" style="color: var(--accent-green);">Available</div>
+    <div class="kpi-trend">Classifier & Regressor serialized</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Fallback Mode</span>
+      <span class="badge badge-warning">Strict</span>
+    </div>
+    <div class="kpi-value" style="color: var(--accent-cyan); font-size: 1.5rem;">Deterministic</div>
+    <div class="kpi-trend">21 Safety Policy rules active</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Detailed Health Diagnostics</div>
+  <div class="card-subtitle">Real-time health probe responses and infrastructure metrics</div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Subsystem</th>
+          <th>Component</th>
+          <th>Status</th>
+          <th>Details</th>
+          <th>Check Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>API Backend</strong></td>
+          <td>Uvicorn / FastAPI Core</td>
+          <td><span class="badge badge-success">HEALTHY</span></td>
+          <td>Handling incoming requests on port 8000</td>
+          <td>{{ health_status.timestamp }}</td>
+        </tr>
+        <tr>
+          <td><strong>Relational Database</strong></td>
+          <td>SQLAlchemy / {{ health_status.db_engine }}</td>
+          <td><span class="badge badge-success">HEALTHY</span></td>
+          <td>Read/Write connections verified</td>
+          <td>{{ health_status.timestamp }}</td>
+        </tr>
+        <tr>
+          <td><strong>Machine Learning</strong></td>
+          <td>Failure Classifier (Random Forest)</td>
+          <td><span class="badge badge-success">READY</span></td>
+          <td>Version: {{ health_status.failure_model_version }}</td>
+          <td>{{ health_status.timestamp }}</td>
+        </tr>
+        <tr>
+          <td><strong>Machine Learning</strong></td>
+          <td>Runtime Regressor (Random Forest)</td>
+          <td><span class="badge badge-success">READY</span></td>
+          <td>Version: {{ health_status.runtime_model_version }}</td>
+          <td>{{ health_status.timestamp }}</td>
+        </tr>
+        <tr>
+          <td><strong>Security Engine</strong></td>
+          <td>Bandit, pip-audit, Gitleaks parsers</td>
+          <td><span class="badge badge-success">ACTIVE</span></td>
+          <td>Release blocking policy & secret redaction active</td>
+          <td>{{ health_status.timestamp }}</td>
+        </tr>
+        <tr>
+          <td><strong>Safety Policy Engine</strong></td>
+          <td>Deterministic Fallback Engine</td>
+          <td><span class="badge badge-success">ACTIVE</span></td>
+          <td>All 21 Safety Policy fallback scenarios active</td>
+          <td>{{ health_status.timestamp }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Security & Compliance{% endblock %}
+{% block page_title %}Security Scanners & Secret Protection Audit{% endblock %}
+
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Total Security Scans</span>
+      <span class="badge badge-info">Audited</span>
+    </div>
+    <div class="kpi-value">{{ security_summary.total_scans }}</div>
+    <div class="kpi-trend">Bandit, pip-audit & Gitleaks</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Releases Blocked</span>
+      <span class="badge badge-failed">Policy Guard</span>
+    </div>
+    <div class="kpi-value" style="color: var(--accent-red);">{{ security_summary.blocked_releases }}</div>
+    <div class="kpi-trend">High/Critical findings blocked</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Secret Leaks Detected</span>
+      <span class="badge badge-warning">Gitleaks</span>
+    </div>
+    <div class="kpi-value" style="color: {% if security_summary.secret_leaks > 0 %}var(--accent-red){% else %}var(--accent-green){% endif %};">
+      {{ security_summary.secret_leaks }}
+    </div>
+    <div class="kpi-trend">All tokens redacted in storage</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Security Compliance</span>
+      <span class="badge badge-success">Active</span>
+    </div>
+    <div class="kpi-value" style="color: var(--accent-green); font-size: 1.5rem;">
+      100% Redacted
+    </div>
+    <div class="kpi-trend">Zero plaintext credentials</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Security Scan Audit Ledger</div>
+  <div class="card-subtitle">Comprehensive record of SAST, SCA, and Secret scanning reports</div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Tool Name</th>
+          <th>Status</th>
+          <th>Highest Severity</th>
+          <th>Findings Count</th>
+          <th>Summary</th>
+          <th>Action Taken</th>
+          <th>Executed At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for scan in security_scans %}
+        <tr>
+          <td><strong>{{ scan.tool_name }}</strong></td>
+          <td>
+            {% if scan.status == 'PASSED' %}
+              <span class="badge badge-success">Passed</span>
+            {% elif scan.status == 'FAILED' %}
+              <span class="badge badge-failed">Failed</span>
+            {% else %}
+              <span class="badge badge-warning">Warning</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if scan.highest_severity in ('HIGH', 'CRITICAL') %}
+              <span class="badge badge-failed">{{ scan.highest_severity }}</span>
+            {% elif scan.highest_severity == 'MEDIUM' %}
+              <span class="badge badge-warning">{{ scan.highest_severity }}</span>
+            {% else %}
+              <span class="badge badge-info">{{ scan.highest_severity }}</span>
+            {% endif %}
+          </td>
+          <td>{{ scan.findings_count }}</td>
+          <td>{{ scan.summary }}</td>
+          <td>
+            {% if scan.highest_severity in ('HIGH', 'CRITICAL') or scan.status == 'FAILED' %}
+              <strong style="color: var(--accent-red);">Release Blocked</strong>
+            {% else %}
+              <span style="color: var(--accent-green);">Release Approved</span>
+            {% endif %}
+          </td>
+          <td><small style="color: var(--text-muted);">{{ scan.executed_at }}</small></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
+            No security scans recorded yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

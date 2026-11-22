@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}AI Predictive Insights{% endblock %}
+{% block page_title %}Machine Learning Intelligence & Prediction Registry{% endblock %}
+
+{% block content %}
+<!-- Models Overview Cards -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Failure Risk Classifier</span>
+      <span class="badge badge-info">Random Forest</span>
+    </div>
+    <div class="kpi-value" style="font-size: 1.4rem;">
+      {% if models.failure_predictor.is_trained %}
+        <span style="color: var(--accent-green);">Trained (Active)</span>
+      {% else %}
+        <span style="color: var(--accent-yellow);">Untrained (Baseline)</span>
+      {% endif %}
+    </div>
+    <div class="kpi-trend">
+      Version: <span class="code-inline">{{ models.failure_predictor.version }}</span> &bull; 
+      Threshold: {{ models.failure_predictor.risk_threshold }}
+    </div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Runtime Regressor</span>
+      <span class="badge badge-purple">Random Forest</span>
+    </div>
+    <div class="kpi-value" style="font-size: 1.4rem;">
+      {% if models.runtime_predictor.is_trained %}
+        <span style="color: var(--accent-green);">Trained (Active)</span>
+      {% else %}
+        <span style="color: var(--accent-yellow);">Untrained (Baseline)</span>
+      {% endif %}
+    </div>
+    <div class="kpi-trend">
+      Version: <span class="code-inline">{{ models.runtime_predictor.version }}</span> &bull; 
+      Confidence Band: &plusmn;15%
+    </div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Safety Guardrail Status</span>
+      <span class="badge badge-success">Enforced</span>
+    </div>
+    <div class="kpi-value" style="font-size: 1.4rem; color: var(--accent-cyan);">
+      Rule 17 Active
+    </div>
+    <div class="kpi-trend">Requires &ge; 15 historical runs for inference</div>
+  </div>
+</div>
+
+<!-- AI Risk Probability Chart -->
+<div class="card">
+  <div class="card-title">Pipeline Failure Probability Predictions</div>
+  <div class="card-subtitle">Predicted risk profile for recent commits (Red bars highlight runs exceeding risk threshold)</div>
+  <div class="chart-wrapper">
+    <canvas id="failureRiskChart"></canvas>
+  </div>
+</div>
+
+<!-- Prediction History Table -->
+<div class="card">
+  <div class="card-title">Prediction Inference History</div>
+  <div class="card-subtitle">Audit of pre-execution features, predicted failure probabilities, and estimated runtimes</div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Commit</th>
+          <th>Model Version</th>
+          <th>Predicted Failure Risk</th>
+          <th>Risk Class</th>
+          <th>Predicted Duration</th>
+          <th>Actual Duration</th>
+          <th>Prediction Accuracy</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pred in predictions_history %}
+        <tr>
+          <td><span class="code-inline">{{ pred.commit_hash[:8] }}</span></td>
+          <td><span class="code-inline">{{ pred.model_version }}</span></td>
+          <td>
+            <strong>{{ (pred.failure_prob * 100) | round(1) }}%</strong>
+            {% if pred.failure_prob >= 0.40 %}
+              <span class="badge badge-failed" style="margin-left: 6px;">High Risk</span>
+            {% else %}
+              <span class="badge badge-success" style="margin-left: 6px;">Low Risk</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if pred.failure_class == 1 %}
+              <span class="badge badge-failed">Fail (1)</span>
+            {% else %}
+              <span class="badge badge-success">Pass (0)</span>
+            {% endif %}
+          </td>
+          <td>{{ pred.predicted_duration_sec }}s</td>
+          <td>{{ pred.actual_duration_sec }}s</td>
+          <td>
+            {% if pred.actual_duration_sec > 0 %}
+              <small style="color: var(--accent-cyan);">Validated</small>
+            {% else %}
+              <small style="color: var(--text-muted);">Pending</small>
+            {% endif %}
+          </td>
+          <td><small style="color: var(--text-muted);">{{ pred.created_at }}</small></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
+            No predictive inference records yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const riskLabels = {{ risk_chart_labels | tojson }};
+  const riskValues = {{ risk_chart_values | tojson }};
+  initAIInsightsCharts(riskLabels, riskValues);
+</script>
+{% endblock %}

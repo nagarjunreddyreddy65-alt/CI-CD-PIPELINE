@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Overview{% endblock %} — Autonomous DevOps</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- Sidebar Navigation -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand-title">
+        <span>Autonomous DevOps</span>
+        <span class="brand-badge">AI CI/CD</span>
+      </div>
+      <div class="brand-subtitle">Intelligent Pipeline Optimization</div>
+    </div>
+
+    <ul class="nav-links">
+      <li class="nav-item">
+        <a href="/dashboard/overview" class="nav-link {% if active_page == 'overview' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          <span>Overview</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/dashboard/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>Pipeline History</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/dashboard/ai-insights" class="nav-link {% if active_page == 'ai_insights' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <span>AI Insights</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/dashboard/optimization" class="nav-link {% if active_page == 'optimization' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <span>Test Optimization</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/dashboard/security" class="nav-link {% if active_page == 'security' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <span>Security & Compliance</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/dashboard/observability" class="nav-link {% if active_page == 'observability' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <span>Observability</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/dashboard/health" class="nav-link {% if active_page == 'health' %}active{% endif %}">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          <span>System Health</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <div>AI Predicts. Rules Decide.</div>
+      <div style="margin-top: 4px; color: #475569;">MCA Final Year Project</div>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <div class="main-wrapper">
+    <header class="top-bar">
+      <div class="page-title">{% block page_title %}Overview{% endblock %}</div>
+      <div class="top-bar-actions">
+        {% if is_demo_data %}
+          <span class="badge badge-demo">Demonstration Data</span>
+        {% else %}
+          <span class="badge badge-success">Live Pipeline Data</span>
+        {% endif %}
+        <a href="/docs" target="_blank" class="btn btn-outline">API Docs</a>
+      </div>
+    </header>
+
+    <main class="content-container">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="/static/js/dashboard.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

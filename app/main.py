@@ -3,11 +3,13 @@ FastAPI Application Entry Point.
 Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization.
 """
 
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -18,6 +20,7 @@ from app.api.routes.predictions import router as predictions_router
 from app.api.routes.plans import router as plans_router
 from app.api.routes.security import router as security_router
 from app.api.routes.telemetry import router as telemetry_router
+from app.api.routes.dashboard import router as dashboard_router
 
 
 @asynccontextmanager
@@ -100,10 +103,18 @@ def read_root():
         "version": settings.VERSION,
         "status": "ONLINE",
         "documentation": "/docs",
+        "dashboard": "/dashboard",
         "api_v1_health": f"{settings.API_V1_PREFIX}/health",
         "api_v1_ready": f"{settings.API_V1_PREFIX}/ready",
     }
 
+
+# -----------------------------------------------------------------------------
+# Static Files & Web Dashboard Mounting
+# -----------------------------------------------------------------------------
+static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # -----------------------------------------------------------------------------
 # Router Registration
@@ -114,6 +125,7 @@ app.include_router(predictions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(plans_router, prefix=settings.API_V1_PREFIX)
 app.include_router(security_router, prefix=settings.API_V1_PREFIX)
 app.include_router(telemetry_router, prefix=settings.API_V1_PREFIX)
+app.include_router(dashboard_router)
 
 
 if __name__ == "__main__":

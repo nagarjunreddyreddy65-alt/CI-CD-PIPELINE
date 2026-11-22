@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Pipeline History{% endblock %}
+{% block page_title %}Historical Pipeline Executions{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">Comprehensive Pipeline Run Ledger</div>
+  <div class="card-subtitle">Complete chronological record of all CI runs, commits, test selections, and decision reasons</div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Run ID</th>
+          <th>Repository & Branch</th>
+          <th>Commit & Author</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th>Tests Executed</th>
+          <th>Test Reduction</th>
+          <th>Decision & Safety Rule</th>
+          <th>Executed At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in history_runs %}
+        <tr>
+          <td><span class="code-inline">{{ run.id[:8] }}</span></td>
+          <td>
+            <strong>{{ run.repository_name }}</strong><br>
+            <small style="color: var(--text-muted);">branch: {{ run.branch }}</small>
+          </td>
+          <td>
+            <span class="code-inline">{{ run.commit_hash[:8] }}</span><br>
+            <small style="color: var(--text-secondary);">{{ run.author_name }} &bull; {{ run.commit_message[:30] }}</small>
+          </td>
+          <td>
+            {% if run.status == 'SUCCESS' %}
+              <span class="badge badge-success">Passed</span>
+            {% elif run.status == 'FAILED' %}
+              <span class="badge badge-failed">Failed</span>
+            {% else %}
+              <span class="badge badge-info">{{ run.status }}</span>
+            {% endif %}
+          </td>
+          <td>{{ run.duration_sec }}s</td>
+          <td>{{ run.selected_tests }} / {{ run.total_tests }}</td>
+          <td>
+            {% if run.reduction_pct > 0 %}
+              <strong style="color: var(--accent-green);">{{ run.reduction_pct }}%</strong>
+            {% else %}
+              <span style="color: var(--text-muted);">0.0%</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if run.is_optimized %}
+              <span class="badge badge-success">Optimized</span><br>
+            {% else %}
+              <span class="badge badge-warning">Full Suite</span><br>
+            {% endif %}
+            <small style="color: var(--text-secondary);">{{ run.decision_reason }}</small>
+          </td>
+          <td><small style="color: var(--text-muted);">{{ run.created_at }}</small></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+            No historical pipeline records found.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

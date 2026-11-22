@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Test Optimization{% endblock %}
+{% block page_title %}AST Test Optimization & Selection Engine{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">Test Reduction & Safety Attribution</div>
+  <div class="card-subtitle">Detailed breakdown of changed files, AST dependency traversal, and deterministic fallback enforcement</div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Commit</th>
+          <th>Decision</th>
+          <th>Selected Tests</th>
+          <th>Total Tests</th>
+          <th>Reduction %</th>
+          <th>Triggered Safety Rule / Fallback Reason</th>
+          <th>Audited Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for plan in optimization_plans %}
+        <tr>
+          <td><span class="code-inline">{{ plan.commit_hash[:8] }}</span></td>
+          <td>
+            {% if plan.decision == 'OPTIMIZED' %}
+              <span class="badge badge-success">OPTIMIZED</span>
+            {% else %}
+              <span class="badge badge-warning">FULL_SUITE</span>
+            {% endif %}
+          </td>
+          <td><strong>{{ plan.selected_tests_count }}</strong> tests</td>
+          <td>{{ plan.total_tests_count }} tests</td>
+          <td>
+            {% if plan.reduction_pct > 0 %}
+              <span class="badge badge-success" style="font-size: 0.8rem;">-{{ plan.reduction_pct }}%</span>
+            {% else %}
+              <span style="color: var(--text-muted);">0.0%</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if plan.safety_rule_triggered %}
+              <strong style="color: var(--accent-yellow);">{{ plan.safety_rule_triggered }}</strong><br>
+            {% endif %}
+            <small style="color: var(--text-secondary);">{{ plan.decision_reason }}</small>
+          </td>
+          <td><small style="color: var(--text-muted);">{{ plan.created_at }}</small></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
+            No optimization plans generated yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Deterministic Safety Policy: The 21 Fallback Scenarios</div>
+  <div class="card-subtitle">Mandatory scenarios that immediately force full test suite execution</div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; font-size: 0.85rem;">
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>1. Database Migration:</strong> Schema alterations or Alembic scripts
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>2. Auth & Security:</strong> Authentication, tokens, RBAC logic
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>3. Payment & Billing:</strong> Payment gateways, invoicing, currency
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>4. Cryptography:</strong> Encryption, hashing, key management
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>5. Manifest Changes:</strong> requirements.txt, pyproject.toml
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>6. Lock Files:</strong> uv.lock, poetry.lock, Pipfile.lock
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>7. CI/CD Workflows:</strong> GitHub Actions .github/workflows
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>8. Unsupported Files:</strong> Binary, C extensions, shell scripts
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>9. AST Parse Failures:</strong> Syntax errors during parsing
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>10. Dynamic Imports:</strong> __import__, importlib, eval, exec
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>11-13. Graph & Mapping:</strong> Disconnected graph, empty test list
+    </div>
+    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+      <strong>14-18. ML Safety:</strong> Missing artifact, expired model, <15 runs
+    </div>
+  </div>
+</div>
+{% endblock %}

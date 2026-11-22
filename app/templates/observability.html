@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Observability & Telemetry{% endblock %}
+{% block page_title %}Runtime Telemetry & Anomaly Observability{% endblock %}
+
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Avg CPU Utilization</span>
+      <span class="badge badge-info">psutil</span>
+    </div>
+    <div class="kpi-value">{{ telemetry_kpis.avg_cpu }}%</div>
+    <div class="kpi-trend">Across all test runner jobs</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Avg Peak Memory</span>
+      <span class="badge badge-purple">RSS</span>
+    </div>
+    <div class="kpi-value">{{ telemetry_kpis.avg_memory_mb }} MB</div>
+    <div class="kpi-trend">Peak memory per run</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Anomalies Flagged</span>
+      <span class="badge badge-warning">Z-Score</span>
+    </div>
+    <div class="kpi-value" style="color: {% if anomalies_count > 0 %}var(--accent-yellow){% else %}var(--accent-green){% endif %};">
+      {{ anomalies_count }}
+    </div>
+    <div class="kpi-trend">Z-Score &ge; 2.5 standard deviations</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-header">
+      <span>Failure Clusters</span>
+      <span class="badge badge-info">Correlator</span>
+    </div>
+    <div class="kpi-value">{{ correlated_groups | length }}</div>
+    <div class="kpi-trend">Clustered by error signature</div>
+  </div>
+</div>
+
+<!-- Telemetry Chart -->
+<div class="card">
+  <div class="card-title">Hardware Telemetry Over Time</div>
+  <div class="card-subtitle">CPU utilization % (left axis) and Peak Memory MB (right axis)</div>
+  <div class="chart-wrapper">
+    <canvas id="telemetryChart"></canvas>
+  </div>
+</div>
+
+<!-- Correlated Failure Clusters Section -->
+<div class="card">
+  <div class="card-title">Deterministic Failure Event Correlations</div>
+  <div class="card-subtitle">Clustered failure signatures grouped across commits, workflows, and time windows</div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Group ID</th>
+          <th>Failure Signature</th>
+          <th>Occurrences</th>
+          <th>Affected Commits</th>
+          <th>Classification</th>
+          <th>First Seen</th>
+          <th>Last Seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for grp in correlated_groups %}
+        <tr>
+          <td><span class="code-inline">{{ grp.group_id }}</span></td>
+          <td><strong style="color: var(--accent-red);">{{ grp.failure_signature }}</strong></td>
+          <td>{{ grp.occurrence_count }} times</td>
+          <td>
+            {% for c in grp.affected_commits %}
+              <span class="code-inline">{{ c[:8] }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if grp.is_systemic %}
+              <span class="badge badge-failed">Systemic Failure</span>
+            {% else %}
+              <span class="badge badge-warning">Isolated Defect</span>
+            {% endif %}
+          </td>
+          <td><small style="color: var(--text-muted);">{{ grp.first_seen }}</small></td>
+          <td><small style="color: var(--text-muted);">{{ grp.last_seen }}</small></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
+            No correlated failure events detected. Telemetry and test runs are clean.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const telemetryLabels = {{ telemetry_chart_labels | tojson }};
+  const cpuData = {{ telemetry_chart_cpu | tojson }};
+  const memData = {{ telemetry_chart_mem | tojson }};
+  initObservabilityCharts(telemetryLabels, cpuData, memData);
+</script>
+{% endblock %}
