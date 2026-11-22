@@ -38,8 +38,10 @@ def run_pytest_command(args: list[str]) -> dict[str, Any]:
     _start_mem = psutil.virtual_memory().used / (1024 * 1024)
     start_time = time.perf_counter()
 
-    cmd = [sys.executable, "-m", "pytest"] + args
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    cmd = [sys.executable, "-B", "-m", "pytest"] + args
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
 
     end_time = time.perf_counter()
     end_cpu = psutil.cpu_percent(interval=0.1)
@@ -52,8 +54,31 @@ def run_pytest_command(args: list[str]) -> dict[str, Any]:
         "cpu_percent": round(max(start_cpu, end_cpu), 1),
         "memory_mb": round(end_mem, 1),
         "status": "PASSED" if result.returncode == 0 else "FAILED",
-        "output": result.stdout,
+        "output": result.stdout + "\n" + result.stderr,
     }
+
+
+def _restore_file_and_clear_cache(path: str, content: str) -> None:
+    """Restores pristine file content and clears Python bytecode caches to avoid stale execution."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    base_name = os.path.splitext(os.path.basename(path))[0]
+    pycache_dir = os.path.join(os.path.dirname(path), "__pycache__")
+    if os.path.exists(pycache_dir):
+        for fname in os.listdir(pycache_dir):
+            if fname.startswith(base_name):
+                try:
+                    os.remove(os.path.join(pycache_dir, fname))
+                except OSError:
+                    pass
+
+    try:
+        # Advance file timestamp by 0.05s to force Python module reload detection
+        curr_time = time.time() + 0.05
+        os.utime(path, (curr_time, curr_time))
+    except OSError:
+        pass
 
 
 def execute_e2e_benchmark() -> dict[str, Any]:
@@ -239,18 +264,17 @@ def execute_e2e_benchmark() -> dict[str, Any]:
                 )
             finally:
                 # Guarantee restoration after each trial
-                with open(math_file_path, "w", encoding="utf-8") as f:
-                    f.write(original_code)
+                _restore_file_and_clear_cache(math_file_path, original_code)
 
             # Verify restoration after each trial
             verify_restore = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
             if verify_restore["exit_code"] != 0:
                 raise RuntimeError(
-                    f"Pristine codebase restoration failed after mutation {mut['id']}!"
+                    f"Pristine codebase restoration failed after mutation {mut['id']}! "
+                    f"Pytest output:\n{verify_restore['output']}"
                 )
     finally:
-        with open(math_file_path, "w", encoding="utf-8") as f:
-            f.write(original_code)
+        _restore_file_and_clear_cache(math_file_path, original_code)
 
     results["defect_injection_experiment"] = {
         "target_file": "sample_app/utils/math_ops.py",
