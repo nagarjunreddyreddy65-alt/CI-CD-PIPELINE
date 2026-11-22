@@ -25,7 +25,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
-from app.database.models import Base, Commit, PipelineRun, Repository
+from app.database.models import Base, ChangedFile, Commit, PipelineRun, Repository
 from app.main import app, lifespan
 from app.ml.model_manager import ModelManager
 from app.optimization.decision_engine import DecisionEngine, ExecutionDecision
@@ -333,20 +333,42 @@ def test_synthetic_only_model_never_production_ready():
 
 
 def test_genuine_model_with_valid_provenance():
-    """Verifies genuine telemetry training marks model as production ready."""
+    """Verifies genuine telemetry training marks model as production ready when certified."""
     with tempfile.TemporaryDirectory() as td:
         mm = ModelManager(registry_dir=td)
-        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mock_runs = []
+        for i in range(25):
+            is_fail = i % 4 == 0
+            dur = 12.0 + (5.0 if is_fail else 0.0) + (i * 0.4)
+            r = PipelineRun(
+                id=f"prov-run-{i:03d}",
+                status="FAILED" if is_fail else "SUCCESS",
+                total_duration_sec=dur,
+            )
+            c = Commit(commit_hash=f"prov-hash-{i:03d}", branch="main")
+            cf = ChangedFile(
+                file_path="sample_app/utils/math_ops.py"
+                if not is_fail
+                else "sample_app/services/security_service.py",
+                change_type="MODIFIED",
+                lines_added=10 if not is_fail else 80,
+                lines_deleted=2 if not is_fail else 20,
+                is_sensitive=is_fail,
+            )
+            c.changed_files = [cf]
+            r.commit = c
+            mock_runs.append(r)
+        telemetry = mm.extract_features_from_db_runs(mock_runs)
         res = mm.train_and_persist(
-            n_samples=25,
+            n_samples=len(telemetry),
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
-            training_data=(X, y_fail, y_time),
+            training_data=telemetry,
             verified_db_source=True,
-            is_production_ready=True,
         )
         assert res["provenance"] == "GENUINE_PIPELINE_TELEMETRY"
         assert res["is_production_ready"] is True
+        assert res["certification_report"]["is_certified"] is True
         can_pred, _ = mm.can_predict(genuine_historical_runs_count=25)
         assert can_pred is True
 
@@ -533,14 +555,35 @@ def test_missing_metadata_forces_full_suite(fresh_sqlite_db):
     """Verifies that missing model_metadata.json forces FULL_SUITE fallback."""
     with tempfile.TemporaryDirectory() as td:
         mm = ModelManager(registry_dir=td)
-        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mock_runs = []
+        for i in range(25):
+            is_fail = i % 4 == 0
+            dur = 12.0 + (5.0 if is_fail else 0.0) + (i * 0.4)
+            r = PipelineRun(
+                id=f"sha-run-{i:03d}",
+                status="FAILED" if is_fail else "SUCCESS",
+                total_duration_sec=dur,
+            )
+            c = Commit(commit_hash=f"sha-hash-{i:03d}", branch="main")
+            cf = ChangedFile(
+                file_path="sample_app/utils/math_ops.py"
+                if not is_fail
+                else "sample_app/services/security_service.py",
+                change_type="MODIFIED",
+                lines_added=10 if not is_fail else 80,
+                lines_deleted=2 if not is_fail else 20,
+                is_sensitive=is_fail,
+            )
+            c.changed_files = [cf]
+            r.commit = c
+            mock_runs.append(r)
+        telemetry = mm.extract_features_from_db_runs(mock_runs)
         mm.train_and_persist(
-            n_samples=25,
+            n_samples=len(telemetry),
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
-            training_data=(X, y_fail, y_time),
+            training_data=telemetry,
             verified_db_source=True,
-            is_production_ready=True,
         )
         # Delete metadata file
         if os.path.exists(mm.metadata_path):
@@ -571,14 +614,35 @@ def test_corrupted_metadata_forces_full_suite(fresh_sqlite_db):
     """Verifies that corrupted model_metadata.json forces FULL_SUITE fallback."""
     with tempfile.TemporaryDirectory() as td:
         mm = ModelManager(registry_dir=td)
-        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mock_runs = []
+        for i in range(25):
+            is_fail = i % 4 == 0
+            dur = 12.0 + (5.0 if is_fail else 0.0) + (i * 0.4)
+            r = PipelineRun(
+                id=f"sha-run-{i:03d}",
+                status="FAILED" if is_fail else "SUCCESS",
+                total_duration_sec=dur,
+            )
+            c = Commit(commit_hash=f"sha-hash-{i:03d}", branch="main")
+            cf = ChangedFile(
+                file_path="sample_app/utils/math_ops.py"
+                if not is_fail
+                else "sample_app/services/security_service.py",
+                change_type="MODIFIED",
+                lines_added=10 if not is_fail else 80,
+                lines_deleted=2 if not is_fail else 20,
+                is_sensitive=is_fail,
+            )
+            c.changed_files = [cf]
+            r.commit = c
+            mock_runs.append(r)
+        telemetry = mm.extract_features_from_db_runs(mock_runs)
         mm.train_and_persist(
-            n_samples=25,
+            n_samples=len(telemetry),
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
-            training_data=(X, y_fail, y_time),
+            training_data=telemetry,
             verified_db_source=True,
-            is_production_ready=True,
         )
         # Overwrite with invalid JSON
         with open(mm.metadata_path, "w", encoding="utf-8") as f:
@@ -884,14 +948,35 @@ def test_artifact_sha256_mismatch_forces_full_suite(fresh_sqlite_db):
 
     with tempfile.TemporaryDirectory() as td:
         mm = ModelManager(registry_dir=td)
-        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mock_runs = []
+        for i in range(25):
+            is_fail = i % 4 == 0
+            dur = 12.0 + (5.0 if is_fail else 0.0) + (i * 0.4)
+            r = PipelineRun(
+                id=f"sha-run-{i:03d}",
+                status="FAILED" if is_fail else "SUCCESS",
+                total_duration_sec=dur,
+            )
+            c = Commit(commit_hash=f"sha-hash-{i:03d}", branch="main")
+            cf = ChangedFile(
+                file_path="sample_app/utils/math_ops.py"
+                if not is_fail
+                else "sample_app/services/security_service.py",
+                change_type="MODIFIED",
+                lines_added=10 if not is_fail else 80,
+                lines_deleted=2 if not is_fail else 20,
+                is_sensitive=is_fail,
+            )
+            c.changed_files = [cf]
+            r.commit = c
+            mock_runs.append(r)
+        telemetry = mm.extract_features_from_db_runs(mock_runs)
         mm.train_and_persist(
-            n_samples=25,
+            n_samples=len(telemetry),
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
-            training_data=(X, y_fail, y_time),
+            training_data=telemetry,
             verified_db_source=True,
-            is_production_ready=True,
         )
 
         # Tamper with failure_predictor.joblib by appending arbitrary bytes
@@ -923,25 +1008,67 @@ def test_artifact_sha256_mismatch_forces_full_suite(fresh_sqlite_db):
 def test_model_not_marked_production_ready_solely_by_record_count():
     """
     Verifies that having >= 15 records does NOT automatically mark a model production ready
-    unless explicitly certified (is_production_ready=True).
+    unless explicitly certified with valid holdout evaluation and observed class diversity.
+    When a database has 25 runs but 0 observed failures, certification fails and is_production_ready is False.
     """
     with tempfile.TemporaryDirectory() as td:
         mm = ModelManager(registry_dir=td)
-        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
-        # Train with 25 records but explicit is_production_ready=False
+        # Create 25 runs with 100% SUCCESS (0 failures observed)
+        mock_runs = []
+        for i in range(25):
+            r = PipelineRun(
+                id=f"single-class-run-{i:03d}",
+                status="SUCCESS",
+                total_duration_sec=20.0 + float(i),
+            )
+            c = Commit(commit_hash=f"single-hash-{i:03d}", branch="main")
+            cf = ChangedFile(
+                file_path="sample_app/utils/math_ops.py",
+                change_type="MODIFIED",
+                lines_added=10,
+                lines_deleted=2,
+                is_sensitive=False,
+            )
+            c.changed_files = [cf]
+            r.commit = c
+            mock_runs.append(r)
+
+        telemetry = mm.extract_features_from_db_runs(mock_runs)
         res = mm.train_and_persist(
-            n_samples=25,
+            n_samples=len(telemetry),
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
-            training_data=(X, y_fail, y_time),
+            training_data=telemetry,
             verified_db_source=True,
-            is_production_ready=False,
         )
         assert res["is_production_ready"] is False
+        assert res["certification_report"]["is_certified"] is False
+        assert any(
+            "lacks class diversity" in r for r in res["certification_report"]["failure_reasons"]
+        )
 
         can_pred, reason = mm.can_predict(genuine_historical_runs_count=25)
         assert can_pred is False
         assert "is_production_ready is false" in reason
+
+
+def test_genuine_provenance_rejected_when_caller_supplies_raw_arrays():
+    """
+    Verifies the trust boundary around verified_db_source:
+    Caller passing verified_db_source=True with raw synthetic numpy arrays is rejected
+    with a ValueError. Genuine telemetry must be a VerifiedTelemetryDataset extracted from DB.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        with pytest.raises(ValueError, match="Trust boundary violation"):
+            mm.train_and_persist(
+                n_samples=25,
+                data_source="GENUINE_PIPELINE_TELEMETRY",
+                genuine_historical_runs_count=25,
+                training_data=(X, y_fail, y_time),
+                verified_db_source=True,
+            )
 
 
 def test_caller_supplied_historical_values_cannot_affect_server_decision(client):

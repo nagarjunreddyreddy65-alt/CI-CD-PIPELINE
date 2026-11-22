@@ -72,7 +72,7 @@ def test_train_endpoint_genuine_telemetry_insufficient_samples(client):
 
 def test_train_endpoint_genuine_telemetry_success(client, db_session):
     """Tests POST /api/v1/predictions/train succeeds with real DB features when >= 15 runs exist."""
-    from app.database.models import Commit, PipelineRun, Repository
+    from app.database.models import ChangedFile, Commit, PipelineRun, Repository
 
     repo = Repository(
         name="AutonomousDevOps/CI-CD-PIPELINE",
@@ -95,6 +95,17 @@ def test_train_endpoint_genuine_telemetry_success(client, db_session):
         db_session.add(commit)
         db_session.flush()
         status_val = "FAILED" if i % 4 == 0 else "SUCCESS"
+        cf = ChangedFile(
+            commit_id=commit.id,
+            file_path="sample_app/utils/math_ops.py"
+            if status_val == "SUCCESS"
+            else "sample_app/services/security_service.py",
+            change_type="MODIFIED",
+            lines_added=10 if status_val == "SUCCESS" else 80,
+            lines_deleted=2 if status_val == "SUCCESS" else 20,
+            is_sensitive=(status_val == "FAILED"),
+        )
+        db_session.add(cf)
         run = PipelineRun(
             repository_id=repo.id,
             commit_id=commit.id,

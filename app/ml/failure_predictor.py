@@ -82,11 +82,16 @@ class FailurePredictor:
             eval_X, eval_y = X, y
 
         # Evaluation (on holdout test set if >= 15 samples, else in-sample)
-        y_pred = self.model.predict(eval_X)
         y_prob = (
             self.model.predict_proba(eval_X)[:, 1]
             if len(self.model.classes_) > 1
             else np.zeros(len(eval_y))
+        )
+        # Evaluate predictions aligned with calibrated operational decision threshold
+        y_pred = (
+            (y_prob >= self.risk_threshold).astype(int)
+            if len(self.model.classes_) > 1
+            else self.model.predict(eval_X)
         )
 
         prec = float(precision_score(eval_y, y_pred, zero_division=0))

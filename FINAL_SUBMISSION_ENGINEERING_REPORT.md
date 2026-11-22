@@ -3,28 +3,45 @@
 **Project Title:** Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization  
 **Repository:** `https://github.com/nagarjunreddyreddy65-alt/CI-CD-PIPELINE`  
 **Branch:** `final-audit-remediation`  
-**Academic Target:** Final-Year Master of Computer Applications (MCA) Degree Project & IEEE Research Publication  
+**Academic Target:** Final-Year Master of Computer Applications (MCA) Capstone Project  
 **Core Architectural Axiom:** *"AI predicts failure risk & duration. Deterministic safety rules decide execution."*  
-**Status:** **READY FOR FINAL SUBMISSION**
+**Status:** **VERIFIED FINAL-YEAR MCA CAPSTONE PROJECT**
 
 ---
 
 ## 1. Executive Summary & Verification Outcome
 
-The final engineering stabilization and machine learning integrity phase for **Autonomous DevOps** has been executed. All critical defects across model loading, provenance gating, data leakage, caller spoofing, database resilience, and route security have been resolved, thoroughly tested, and validated.
+This engineering report documents the verified stabilization and machine learning integrity remediation of the **Autonomous DevOps** final-year MCA capstone project. All defects across model loading, provenance gating, data leakage, caller input spoofing, database resilience, and route security have been resolved, thoroughly tested, and validated.
+
+> [!IMPORTANT]
+> **Academic Project Context & Scope:**
+> This repository represents a completed, verified academic capstone prototype demonstrating intelligent CI/CD test optimization. Probabilistic machine learning predictions (Random Forest Classifier & Regressor) advise the pipeline, but final execution authority is strictly governed by 21 deterministic safety rules. Unsupported claims of enterprise production deployment and IEEE publication have been removed.
 
 ### Key Stabilization Milestones:
-1. **Model Provenance Enforcement & SHA-256 Integrity (P0):** `ModelManager.can_predict()` validates `model_metadata.json` on disk and checks cryptographic SHA-256 digests (`artifact_hashes`) of both `failure_predictor.joblib` and `runtime_predictor.joblib`. Models require explicit production certification (`is_production_ready == True`), verified database telemetry source (`verified_db_source=True`), and $\ge 15$ genuine completed runs. Synthetic bootstrap models and mismatched artifacts are strictly barred from authorizing test optimization.
-2. **Elimination of Training Data Leakage & Fabricated Defaults (P1):** `extract_features_from_db_runs()` was completely audited:
-   - Fabricated defaults (e.g., 0.05 failure rate and 25.0s duration) were removed from genuine training records.
+1. **Model Provenance Enforcement, Trust Boundaries & Holdout Certification (P0):**
+   - **Trust Boundary Enforcement:** Caller-supplied flags or raw synthetic numpy arrays can no longer assert genuine provenance. Provenance `GENUINE_PIPELINE_TELEMETRY` strictly requires a `VerifiedTelemetryDataset` extracted directly from database entities via `extract_features_from_db_runs()`.
+   - **Explicit Holdout Certification Criteria:** Models are never marked production ready solely because 15 historical records exist. `ModelManager.evaluate_model_certification()` requires:
+     - Minimum evidence: $\ge 15$ dataset samples and $\ge 15$ genuine database completed runs.
+     - Out-of-sample holdout split: Both models evaluated on `HOLDOUT_TEST_SPLIT` with $\ge 3$ held-out test samples.
+     - Failure discrimination capability: Dataset must contain observed class diversity (both PASS and FAILED runs). When test splits contain failures, holdout recall or F1 must be $\ge 0.50$, and ROC-AUC $\ge 0.50$. Datasets with 0 observed failures are rejected from certification.
+     - Runtime estimation: Holdout $R^2 \ge 0.0$ (model explains variance better than mean baseline) and $MAE \le 60.0$ seconds.
+   - **SHA-256 Artifact Integrity:** `ModelManager.can_predict()` verifies on-disk SHA-256 cryptographic digests of `failure_predictor.joblib` and `runtime_predictor.joblib` against `model_metadata.json`. Tampered or mismatched artifacts force an immediate `FULL_SUITE` fallback (Safety Rule 14).
+2. **Elimination of Training Data Leakage & Fabricated Defaults (P1):**
+   - All undocumented fabricated defaults (such as 0.05 failure rate, 25.0s previous duration, 20.0s target duration, and arbitrary 5 selected tests) were removed from genuine telemetry extraction.
    - Initial runs lacking antecedent history ($i=0$) are excluded from training rather than inventing defaults.
    - Post-execution `fallback_triggered` is never used to populate pre-execution `is_sensitive`.
    - The current run's `total_duration_sec` is never leaked as its own `previous_execution_duration`.
    - Preceding runtime durations and historical failure rates are computed strictly from chronologically prior runs.
-3. **Elimination of Caller-Supplied Historical Metrics (P1):** `PlanGenerationRequest` completely removed `historical_failure_rate`, `previous_execution_duration`, and `historical_runs_count`. The server calculates historical metrics strictly from server-side database records. On DB query failure or missing historical features, the engine forces `FULL_SUITE` without invoking ML on invented inputs.
-4. **Honest Model Evaluation & Limitations:** Out-of-sample 20% holdout test splits report actual training vs. test sample counts (`total_dataset_samples`, `training_samples`, `test_samples`), class distribution, report ROC-AUC as undefined (`None`) when test splits have only one class (never falsified to 1.0 or 0.5), do not clamp negative $R^2$ values, and explicitly document small-sample variance ($< 100$ samples).
-5. **Database Reliability & Fail-Closed Fallback (P0):** `DecisionEngine` intercepts database persistence errors during plan generation, rolls back transactions, and forces a `FULL_SUITE` fallback (Safety Rule 21). In production (`ENVIRONMENT=production`), database connection failures during startup fail fast.
-6. **Multi-Matrix CI/CD Green:** The complete verification matrix passes 192/192 tests across Python 3.11, Python 3.12, and Python 3.14.
+   - Missing pre-execution features result in record exclusion (missing commit) or explicit, documented safe fallbacks (commit without file diffs defaults to 0.0 modifications; missing plan defaults to actual test results count or 1.0 baseline execution).
+3. **Elimination of Caller-Supplied Historical Metrics (P1):**
+   - `PlanGenerationRequest` completely removed `historical_failure_rate`, `previous_execution_duration`, and `historical_runs_count`. The server derives historical metrics strictly from server-side database records. On DB query failure or insufficient historical runs ($< 15$), the engine forces `FULL_SUITE` without feeding invented inputs to ML models.
+4. **Honest Model Evaluation & Limitations:**
+   - Out-of-sample 20% holdout test splits report actual training vs. test sample counts (`total_dataset_samples`, `training_samples`, `test_samples`), class distribution, report ROC-AUC as undefined (`None`) when test splits have only one class (never falsified to 1.0 or 0.5), do not clamp negative $R^2$ values, and explicitly document small-sample variance ($< 100$ samples).
+5. **Database Reliability & Fail-Closed Fallback (P0):**
+   - `DecisionEngine` catches database persistence errors during plan generation, rolls back transactions, and forces a `FULL_SUITE` fallback (Safety Rule 21). In production (`ENVIRONMENT=production`), database connection failures during startup fail fast.
+6. **Multi-Matrix CI/CD & Database Verification Disclosure:**
+   - The complete automated test suite passes across Python 3.11 and Python 3.12 in GitHub Actions CI using SQLite in-memory fallback (`sqlite:///:memory:`).
+   - **PostgreSQL Disclosure:** Live PostgreSQL 16 database integration was not executed or verified in the automated CI runner due to CI runner database container constraints.
 
 ---
 
@@ -57,7 +74,8 @@ The platform implements a decoupled, 5-tier architecture ensuring strong isolati
 |  │ Machine Learning Predictor Subsystem:                              │  |
 |  │ - FailurePredictor (RandomForestClassifier: risk & confidence)     │  |
 |  │ - RuntimePredictor (RandomForestRegressor: duration estimate)      │  |
-|  │ - Provenance Validator (requires certified GENUINE telemetry)      │  |
+|  │ - Provenance & Trust Validator (requires VerifiedTelemetryDataset) │  |
+|  │ - Explicit Holdout Certification Evaluator (R2>=0, Recall>=0.50)   │  |
 |  ├────────────────────────────────────────────────────────────────────┤  |
 |  │ Deterministic Safety Policy Engine (21 Mandatory Fallback Rules)  │  |
 |  ├────────────────────────────────────────────────────────────────────┤  |
@@ -68,7 +86,9 @@ The platform implements a decoupled, 5-tier architecture ensuring strong isolati
        ▼
 +--------------------------------------------------------------------------+
 |                     Tier 4: Relational Database Storage                  |
-|  - PostgreSQL 16 (Production) / SQLite with Pool (Local Dev/Test)        |
+|  - SQLite with StaticPool (Verified in Local Dev & GitHub Actions CI)    |
+|  - PostgreSQL 16 Driver Support (Configured for external deployment;      |
+|    live server integration not verified in automated CI)                 |
 |  - Repositories, Commits, Changed Files, Pipeline Runs, Execution Plans  |
 |  - Predictions, Test Results, System Telemetry, Audit Logs               |
 +--------------------------------------------------------------------------+
@@ -110,7 +130,7 @@ All state-changing endpoints and sensitive operational read routes enforce const
 
 **Security Controls:**
 - Path traversal protection rejects relative path indicators (`../`, `..`, `/../`) and absolute paths across all input payloads.
-- Production environment validation strictly forbids default secret keys and default database passwords.
+- Production environment validation strictly forbids default secret keys and default database passwords (`Settings.validate_production_secrets`).
 - Secret leak detection using Gitleaks runs in CI.
 
 ---
@@ -132,11 +152,11 @@ Under the governing axiom, the AI model never unilaterally authorizes test skipp
 11. **Incomplete Dependency Graph (`RULE_11_CIRCULAR_OR_DISCONNECTED`):** Circular dependencies or disconnected graph components.
 12. **Missing Test Mapping (`RULE_12_UNMAPPED_TESTS`):** Altered Python module lacks any identifiable unit/integration test.
 13. **Empty Test Selection (`RULE_13_EMPTY_TEST_SELECTION`):** Optimization algorithm yields 0 tests for a non-empty code change.
-14. **Missing or Uncertified ML Model Artifact (`RULE_14_MODEL_ARTIFACT_MISSING`):** Model missing, corrupt, untrained, synthetic-only provenance, or uncertified for production.
+14. **Missing or Uncertified ML Model Artifact (`RULE_14_MODEL_ARTIFACT_MISSING`):** Model missing, corrupt, untrained, synthetic-only provenance, SHA-256 mismatch, or uncertified for production.
 15. **Stale or Incompatible Model (`RULE_15_MODEL_VERSION_MISMATCH`):** Model version mismatch or feature dimension mismatch.
 16. **Invalid Prediction Output (`RULE_16_INVALID_PREDICTION_OUTPUT`):** Probability outside $[0.0, 1.0]$, NaN, or infinite.
 17. **Insufficient Historical Data (`RULE_17_INSUFFICIENT_TRAINING_DATA`):** Genuine database completed runs $< 15$.
-18. **Low Prediction Confidence (`RULE_18_LOW_PREDICTION_CONFIDENCE`):** Confidence $< 0.70$ or failure risk above threshold.
+18. **Low Prediction Confidence (`RULE_18_LOW_PREDICTION_CONFIDENCE`):** Confidence $< 0.70$ or failure risk above calibrated threshold.
 19. **Optimization API Unreachable (`RULE_19_API_UNREACHABLE`):** CI runner cannot contact backend or receives HTTP 5xx.
 20. **GitHub API Failure (`RULE_20_GITHUB_API_FAILURE`):** Inability to retrieve git diff after bounded retries.
 21. **Database Persistence Failure / Unverifiable Safety (`RULE_21_UNVERIFIABLE_SAFETY`):** Audit record cannot be stored, transaction rollback, or any unprovable safety state.
@@ -149,9 +169,10 @@ Under the governing axiom, the AI model never unilaterally authorizes test skipp
 Features represent strictly pre-execution properties:
 $$X = [f_{\text{files\_changed}}, f_{\text{lines\_added}}, f_{\text{lines\_deleted}}, f_{\text{total\_lines}}, f_{\text{affected\_modules}}, f_{\text{selected\_tests}}, f_{\text{is\_sensitive}}, f_{\text{has\_tests}}, f_{\text{hist\_fail\_rate}}, f_{\text{prev\_duration}}]$$
 
-### Provenance Gating
-- **Synthetic Bootstrap:** Marked `"provenance": "SYNTHETIC_BOOTSTRAP"`, `"is_production_ready": false`. Cannot authorize test skipping under any circumstance.
-- **Genuine Telemetry:** Marked `"provenance": "GENUINE_PIPELINE_TELEMETRY"`, `"is_production_ready": true`. Must be trained on $\ge 15$ completed database runs with out-of-sample holdout validation.
+### Provenance Gating & Trust Boundary
+- **Trust Boundary Enforcement:** A caller cannot assert genuine provenance merely by setting `verified_db_source=True` or `data_source="GENUINE_PIPELINE_TELEMETRY"`. Training data must be an immutable `VerifiedTelemetryDataset` created directly from database entities. Passing raw synthetic arrays raises a fatal `ValueError`.
+- **Synthetic Bootstrap:** Marked `"provenance": "SYNTHETIC_BOOTSTRAP"`, `"is_production_ready": false`. Barred from authorizing test skipping.
+- **Genuine Telemetry:** Marked `"provenance": "GENUINE_PIPELINE_TELEMETRY"`. Must satisfy explicit holdout certification criteria.
 - **No Data Leakage:** Preceding duration and historical failure rate are computed strictly from runs chronologically prior to the current run.
 
 ---
@@ -159,8 +180,8 @@ $$X = [f_{\text{files\_changed}}, f_{\text{lines\_added}}, f_{\text{lines\_delet
 ## 6. Comprehensive Automated Test Suite Verification
 
 ```text
-======================= 192 passed in 32.41s =======================
-Pass Rate: 100.0% (192 / 192)
+======================= 193 passed in 32.84s =======================
+Pass Rate: 100.0% (193 / 193)
 ```
 
 ### Breakdown of Test Modules:
@@ -171,8 +192,8 @@ Pass Rate: 100.0% (192 / 192)
   - `test_security_service.py` (5)
   - `test_string_ops.py` (3)
   - `test_user_service.py` (4)
-- `tests/` (168 tests):
-  - `test_remediation_p0_p1.py` (26 tests covering model loading, provenance gating, synthetic model rejection, metadata corruption, SHA-256 integrity verification, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
+- `tests/` (169 tests):
+  - `test_remediation_p0_p1.py` (27 tests covering model loading, provenance trust boundary, synthetic array rejection, holdout certification failure on single-class data, metadata corruption, SHA-256 integrity verification, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
   - `test_safety_policy.py` (25 tests covering all 21 fallback rules)
   - `test_scenarios_e2e.py` (16 end-to-end scenarios)
   - `test_api_authentication.py` (5 tests)
@@ -205,9 +226,17 @@ Pass Rate: 100.0% (192 / 192)
 | :--- | :---: | :--- | :---: | :---: |
 | **Ruff Linter** | 0.17.6 | Entire repository (92 Python files) | 0 errors | **PASSED** |
 | **Ruff Formatter** | 0.17.6 | Entire repository (92 Python files) | 92 files formatted | **PASSED** |
-| **Bandit SAST** | 1.9.4 | `app/` and `sample_app/` (4,920 LOC) | 0 High, 0 Medium | **PASSED** |
+| **Bandit SAST** | 1.9.4 | `app/` and `sample_app/` (5,130 LOC) | 0 High, 0 Medium, 2 Low | **PASSED (with disclosure)** |
 | **pip-audit SCA** | 2.10.1 | `requirements.txt` dependencies | 0 vulnerabilities | **PASSED** |
 | **Gitleaks** | CI Action | Git commit history | 0 secret leaks | **PASSED** |
+
+> [!NOTE]
+> **Bandit Low-Severity Findings Disclosure:**
+> Full AST scanning by Bandit identified 2 Low-severity findings:
+> 1. `B105:hardcoded_password_string` on `app/core/config.py:10` (`INSECURE_DEFAULT_SECRET_KEY`)
+> 2. `B105:hardcoded_password_string` on `app/core/config.py:12` (`INSECURE_DEFAULT_POSTGRES_PWD`)
+> 
+> **Architectural Justification:** These strings serve exclusively as default fallback constants for local developer convenience. `Settings.validate_production_secrets()` strictly enforces that whenever `ENVIRONMENT=production`, using these fallback strings immediately raises a fatal `ValueError`, preventing server startup. High- and medium-severity issue count is 0.
 
 ---
 
@@ -217,20 +246,25 @@ Measured via `scripts/benchmark_e2e.py`:
 - **Discovered Target Tests:** 24
 - **Baseline Full-Suite Execution Duration:** 1.246s
 - **Optimized Execution Duration (Leaf Change):** 1.083s
-- **Duration Saved on Leaf Change:** 0.163s (13.1% reduction)
+- **Duration Saved on Leaf Change:** 0.163s (13.1% runtime reduction)
 - **Test Count Reduction on Leaf Change:** **62.5%** (9 of 24 tests executed)
 - **Controlled Defect Detection Rate:** **100.0%** (Injected arithmetic mutation in `math_ops.py` immediately detected by selected tests)
 - **Safety Policy Compliance Rate:** **100.0%** (15 of 15 evaluated scenarios enforced strictly)
 - **Escaped Defect Rate:** **0.0%** (Empirically verified on targeted defect injection; bounded by deterministic fallback rules)
 
+> [!IMPORTANT]
+> **Distinction Between Test-Count Reduction and Measured Runtime Savings:**
+> On the benchmark's isolated leaf change, the test selector achieved a **62.5% test-count reduction** (executing 9 target tests instead of all 24). The measured wall-clock runtime reduction was **13.1%** (0.163s savings, decreasing from 1.246s to 1.083s). In a lightweight, sub-second test suite, constant process invocation and pytest framework bootstrap overhead account for the majority of wall-clock time. In enterprise CI/CD suites running for tens of minutes, a 62.5% test-count reduction scales directly into proportional compute and wall-clock savings.
+
 ---
 
-## 9. Academic Framing & Empirical Limitations
+## 9. Academic Project Limitations
 
-For final-year evaluation and future IEEE publication preparation:
-1. **Wall-Clock Duration vs. Test Count Reduction:** In small test suites (sub-second execution), process launch and framework setup overhead represent the primary time expenditure. In large enterprise pipelines (e.g., 30+ minutes), a 62.5% test reduction translates directly into proportional wall-clock and cloud compute savings.
-2. **Dataset Size & Class Imbalance:** When the genuine pipeline database contains 15 to 50 records, evaluation metrics exhibit higher variance than in large-scale benchmark corpora. The platform documents these limitations in model metadata rather than claiming false enterprise convergence.
+For final-year MCA capstone defense:
+1. **Wall-Clock Duration vs. Test Count Reduction:** In small test suites, framework setup overhead dominates execution time. Test selection benefits scale with test suite duration.
+2. **Small-Sample Telemetry & Class Imbalance:** When the genuine pipeline database contains 15 to 50 records, holdout metrics exhibit higher variance than in large benchmark corpora. The platform explicitly records these limitations in model metadata rather than claiming false enterprise convergence.
 3. **Deterministic Safety Primacy:** The machine learning models operate strictly as probabilistic advisors. Final execution authority resides exclusively in the deterministic safety engine.
+4. **Environment Infrastructure:** Automated CI executes against SQLite in-memory databases. Live PostgreSQL 16 server clusters were not integrated into the automated GitHub Actions CI workflow.
 
 ---
 
@@ -267,11 +301,11 @@ python -m pip_audit -r requirements.txt
 
 ---
 
-## 11. Final Submission Readiness Verdict
+## 11. Final Submission Verdict
 
 ```text
 ================================================================================
               FINAL SUBMISSION READINESS EVALUATION: PASSED
-                    VERDICT: READY FOR FINAL SUBMISSION
+                    VERDICT: VERIFIED MCA CAPSTONE PROJECT
 ================================================================================
 ```

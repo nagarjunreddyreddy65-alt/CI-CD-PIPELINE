@@ -111,14 +111,13 @@ def train_models(
                         f"historical runs in database (minimum required is {settings.MIN_TRAINING_RUNS})."
                     ),
                 )
-            X, y_fail, y_time = model_manager.extract_features_from_db_runs(runs)
+            telemetry_data = model_manager.extract_features_from_db_runs(runs)
             result = model_manager.train_and_persist(
-                n_samples=len(X),
+                n_samples=len(telemetry_data),
                 data_source="GENUINE_PIPELINE_TELEMETRY",
                 genuine_historical_runs_count=genuine_count,
-                training_data=(X, y_fail, y_time),
+                training_data=telemetry_data,
                 verified_db_source=True,
-                is_production_ready=True,
             )
         else:
             result = model_manager.train_and_persist(

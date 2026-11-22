@@ -204,6 +204,10 @@ class DecisionEngine:
             genuine_historical_runs_count=effective_historical_runs
         )
 
+        model_missing_or_invalid = not base_artifacts_exist or (
+            "Safety Rule 14" in (can_pred_reason if not can_pred else "")
+        )
+
         # If server-side historical features are unavailable or DB query failed, force FULL_SUITE without invented features
         if not historical_features_available and can_pred:
             can_pred = False
@@ -213,9 +217,7 @@ class DecisionEngine:
             )
 
         # If model artifacts are missing, corrupt, synthetic, or uncertified, flag Rule 14
-        model_artifacts_exist = base_artifacts_exist and (
-            can_pred or "Safety Rule 14" not in can_pred_reason
-        )
+        model_artifacts_exist = base_artifacts_exist and not model_missing_or_invalid
 
         # Step 4 & 5: Feature Extraction & ML Predictions (guaranteed pre-execution only)
         if can_pred and effective_failure_rate is not None and effective_prev_duration is not None:
@@ -248,8 +250,7 @@ class DecisionEngine:
                 "changed_files_count": change_res.total_changed_files,
                 "lines_added": change_res.total_lines_added,
                 "lines_deleted": change_res.total_lines_deleted,
-                "total_lines_changed": change_res.total_lines_added
-                + change_res.total_lines_deleted,
+                "total_lines_changed": change_res.total_lines_added + change_res.total_lines_deleted,
                 "affected_modules_count": len(affected_modules),
                 "selected_tests_count": len(selected_candidate_tests),
                 "is_sensitive_change": change_res.is_sensitive,

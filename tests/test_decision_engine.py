@@ -28,14 +28,37 @@ def sqlite_db_session():
 @pytest.fixture
 def trained_model_manager(tmp_path):
     """Initializes and trains model manager with genuine telemetry schema."""
+    from app.database.models import ChangedFile, Commit, PipelineRun
+
     manager = ModelManager(registry_dir=str(tmp_path))
-    X, y_fail, y_time = manager.generate_synthetic_historical_data(n_samples=40)
+    runs = []
+    for i in range(35):
+        is_fail = i % 5 == 0
+        dur = 12.0 + (6.0 if is_fail else 0.0) + (i * 0.4)
+        r = PipelineRun(
+            id=f"fixture-run-{i:03d}",
+            status="FAILED" if is_fail else "SUCCESS",
+            total_duration_sec=dur,
+        )
+        c = Commit(commit_hash=f"hash-{i:03d}", branch="main")
+        cf = ChangedFile(
+            file_path="sample_app/utils/math_ops.py"
+            if not is_fail
+            else "sample_app/services/security_service.py",
+            change_type="MODIFIED",
+            lines_added=10 if not is_fail else 80,
+            lines_deleted=2 if not is_fail else 20,
+            is_sensitive=is_fail,
+        )
+        c.changed_files = [cf]
+        r.commit = c
+        runs.append(r)
+    telemetry = manager.extract_features_from_db_runs(runs)
     manager.train_and_persist(
-        n_samples=40,
+        n_samples=len(telemetry),
         data_source="GENUINE_PIPELINE_TELEMETRY",
-        genuine_historical_runs_count=40,
-        training_data=(X, y_fail, y_time),
-        is_production_ready=True,
+        genuine_historical_runs_count=35,
+        training_data=telemetry,
         verified_db_source=True,
     )
     return manager
