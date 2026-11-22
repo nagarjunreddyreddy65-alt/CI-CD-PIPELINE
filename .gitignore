@@ -63,6 +63,7 @@ coverage.xml
 *.db
 pgdata/
 data/
+!data/e2e_benchmark_report.json
 
 # Machine learning model artifacts & local datasets
 models/*.joblib

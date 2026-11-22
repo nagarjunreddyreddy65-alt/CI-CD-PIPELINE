@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.database.models import Base
 from app.database.session import get_db
 from app.main import app
@@ -31,6 +32,7 @@ def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
+client.headers.update({"X-Runner-Token": settings.RUNNER_API_KEY})
 
 
 def test_api_generate_plan_optimized():

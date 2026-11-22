@@ -2,9 +2,12 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, final-audit-remediation ]
   pull_request:
     branches: [ main ]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,7 +15,7 @@ concurrency:
 
 jobs:
   test:
-    name: Baseline Test Suite Execution
+    name: Full CI/CD Quality, Security & Test Suite
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,11 +45,15 @@ jobs:
           pip install -r requirements.txt
           pip install ruff bandit pip-audit
 
-      - name: Code Quality & Linting (Ruff)
+      - name: Code Quality & Linting (Ruff Check)
         run: |
           ruff check .
 
-      - name: Execute Full Test Suite (Baseline)
+      - name: Code Formatting Verification (Ruff Format)
+        run: |
+          ruff format --check .
+
+      - name: Execute Full Test Suite (Pytest with Coverage)
         run: |
           python -m pytest tests/ tests_sample_app/ -v --cov=app --cov=sample_app --cov-report=term-missing
 
@@ -54,10 +61,19 @@ jobs:
         run: |
           python scripts/benchmark_baseline.py
 
-      - name: Security Vulnerability Scan (Bandit)
+      - name: Run End-to-End Optimization Benchmark
+        run: |
+          python scripts/benchmark_e2e.py
+
+      - name: Static Security Analysis (Bandit SAST)
         run: |
           bandit -r app sample_app -ll -ii
 
-      - name: Dependency Vulnerability Audit (pip-audit)
+      - name: Dependency Vulnerability Audit (pip-audit SCA)
         run: |
-          pip-audit --desc on || true
+          pip-audit -r requirements.txt --desc on
+
+      - name: Secret Leak Detection (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

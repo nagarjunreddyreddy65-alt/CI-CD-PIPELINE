@@ -1,10 +1,12 @@
 """
 Model Registry & Lifecycle Manager.
 Handles model artifact persistence, versioning, minimum training sample validation,
-and synthetic historical bootstrap data generation for benchmarking.
+provenance metadata tracking, and synthetic historical bootstrap data generation.
 """
 
+import json
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 import joblib
@@ -19,7 +21,8 @@ from app.ml.runtime_predictor import RuntimePredictor
 class ModelManager:
     """
     Central manager for training, serializing, loading, and validating ML models.
-    Enforces Safety Rule 17: Validates that minimum historical samples (>= 15) are satisfied.
+    Enforces Safety Rule 17: Validates that minimum genuine historical samples (>= 15) are satisfied.
+    Maintains rigorous provenance separation between synthetic bootstrap samples and genuine telemetry.
     """
 
     def __init__(self, registry_dir: str | None = None):
@@ -28,6 +31,7 @@ class ModelManager:
 
         self.failure_predictor = FailurePredictor()
         self.runtime_predictor = RuntimePredictor()
+        self.metadata_path = os.path.join(self.registry_dir, "model_metadata.json")
 
     def generate_synthetic_historical_data(
         self, n_samples: int = 50
@@ -82,7 +86,8 @@ class ModelManager:
 
             # Runtime logic: base time + time per test + line diff penalty
             dur = max(
-                2.0, 3.0 + (selected_tests * 0.4) + (tot_lines * 0.02) + np.random.normal(0, 1.0)
+                2.0,
+                3.0 + (selected_tests * 0.4) + (tot_lines * 0.02) + np.random.normal(0, 1.0),
             )
             y_time.append(round(dur, 2))
 
@@ -92,8 +97,16 @@ class ModelManager:
             np.array(y_time, dtype=np.float64),
         )
 
-    def train_and_persist(self, n_samples: int = 50) -> dict[str, Any]:
-        """Trains both models on synthetic bootstrap data and persists artifacts to disk."""
+    def train_and_persist(
+        self,
+        n_samples: int = 50,
+        data_source: str = "SYNTHETIC_BOOTSTRAP",
+        genuine_historical_runs_count: int = 0,
+    ) -> dict[str, Any]:
+        """
+        Trains both models on provided or generated samples and persists artifacts with provenance metadata.
+        Explicitly tracks whether training used synthetic bootstrap data or genuine telemetry.
+        """
         if n_samples < settings.MIN_TRAINING_RUNS:
             raise ValueError(
                 f"Cannot train models: {n_samples} samples is less than the required minimum of {settings.MIN_TRAINING_RUNS}"
@@ -110,18 +123,69 @@ class ModelManager:
         joblib.dump(self.failure_predictor, fail_path)
         joblib.dump(self.runtime_predictor, time_path)
 
-        logger.info(f"Successfully trained and saved models to {self.registry_dir}")
+        # Write provenance metadata
+        is_production_ready = (
+            data_source == "GENUINE_PIPELINE_TELEMETRY"
+            and genuine_historical_runs_count >= settings.MIN_TRAINING_RUNS
+        )
+
+        metadata = {
+            "provenance": data_source,
+            "sample_count": n_samples,
+            "genuine_historical_runs_count": genuine_historical_runs_count,
+            "is_production_ready": is_production_ready,
+            "trained_at": datetime.now(UTC).isoformat(),
+            "failure_metrics": fail_metrics,
+            "runtime_metrics": time_metrics,
+            "model_version": self.failure_predictor.model_version,
+        }
+
+        try:
+            with open(self.metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+        except OSError as e:
+            logger.warning(f"Could not persist model metadata to {self.metadata_path}: {e}")
+
+        logger.info(
+            f"Successfully trained models ({data_source}) and saved artifacts to {self.registry_dir}"
+        )
 
         return {
             "status": "TRAINED_AND_SAVED",
+            "provenance": data_source,
             "samples": n_samples,
+            "is_production_ready": is_production_ready,
             "failure_metrics": fail_metrics,
             "runtime_metrics": time_metrics,
             "artifact_paths": {
                 "failure_model": fail_path,
                 "runtime_model": time_path,
+                "metadata": self.metadata_path,
             },
         }
+
+    def can_predict(self, genuine_historical_runs_count: int) -> tuple[bool, str]:
+        """
+        Validates whether models are authorized to produce optimization predictions.
+        Enforces Safety Rule 17: Synthetic bootstrap data alone does NOT qualify models
+        for unattended test skipping in production.
+        """
+        if not self.failure_predictor.is_trained or not self.runtime_predictor.is_trained:
+            return (
+                False,
+                "Safety Rule 14: Predictive ML models are not trained or artifacts are missing.",
+            )
+
+        if genuine_historical_runs_count < settings.MIN_TRAINING_RUNS:
+            return (
+                False,
+                (
+                    f"Safety Rule 17: Genuine historical pipeline runs ({genuine_historical_runs_count}) "
+                    f"is less than required minimum ({settings.MIN_TRAINING_RUNS}). Full suite fallback enforced."
+                ),
+            )
+
+        return True, "Models validated and ready for inference."
 
     def load_models(self) -> bool:
         """Loads model artifacts from disk if available."""
@@ -139,9 +203,21 @@ class ModelManager:
         return False
 
     def get_models_status(self) -> dict[str, Any]:
-        """Returns readiness and artifact presence for predictive models."""
+        """Returns readiness, provenance, and artifact presence for predictive models."""
         fail_path = os.path.join(self.registry_dir, "failure_predictor.joblib")
         time_path = os.path.join(self.registry_dir, "runtime_predictor.joblib")
+
+        provenance_info: dict[str, Any] = {
+            "provenance": "SYNTHETIC_BOOTSTRAP",
+            "genuine_historical_runs_count": 0,
+            "is_production_ready": False,
+        }
+        if os.path.exists(self.metadata_path):
+            try:
+                with open(self.metadata_path) as f:
+                    provenance_info = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                pass
 
         return {
             "failure_predictor": {
@@ -156,4 +232,5 @@ class ModelManager:
                 "model_file_exists": os.path.exists(time_path),
                 "artifact_path": time_path,
             },
+            "provenance_metadata": provenance_info,
         }

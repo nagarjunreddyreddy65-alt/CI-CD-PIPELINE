@@ -4,9 +4,10 @@ Exposes endpoints for pipeline failure risk assessment, runtime prediction,
 and model training/registration.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.core.security import verify_runner_token
 from app.ml.feature_extractor import FeatureExtractor
 from app.ml.model_manager import ModelManager
 
@@ -39,7 +40,10 @@ class TrainRequest(BaseModel):
     summary="Predict Failure Risk & Runtime Duration",
     description="Infers pipeline failure probability and expected test execution time from pre-execution features.",
 )
-def predict_pipeline(payload: PredictRequest):
+def predict_pipeline(
+    payload: PredictRequest,
+    _authorized: bool = Depends(verify_runner_token),
+):
     """Generates failure risk probability and runtime duration estimates."""
     features = FeatureExtractor.extract_features(
         changed_files_count=payload.changed_files_count,
@@ -81,7 +85,10 @@ def predict_pipeline(payload: PredictRequest):
     summary="Train & Register ML Models",
     description="Trains Random Forest Classifier and Regressor using historical/bootstrap pipeline telemetry.",
 )
-def train_models(payload: TrainRequest):
+def train_models(
+    payload: TrainRequest,
+    _authorized: bool = Depends(verify_runner_token),
+):
     """Trains and serializes both predictive models."""
     try:
         result = model_manager.train_and_persist(n_samples=payload.n_samples)

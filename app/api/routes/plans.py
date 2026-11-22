@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.logging import logger
+from app.core.security import verify_runner_token
 from app.database.models import ExecutionPlan
 from app.database.session import get_db
 from app.optimization.decision_engine import DecisionEngine, ExecutionPlanResult
@@ -69,6 +70,7 @@ class PlanGenerationResponse(BaseModel):
 def generate_execution_plan(
     req: PlanGenerationRequest,
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """
     Generates a deterministic CI/CD execution plan:

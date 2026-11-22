@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.security import verify_runner_token
 from app.database.models import PipelineRun, Telemetry
 from app.database.session import get_db
 from app.telemetry.anomaly_detector import AnomalyReport, StatisticalAnomalyDetector
@@ -67,6 +68,7 @@ class CorrelationRequest(BaseModel):
 def record_telemetry(
     req: TelemetryRecordRequest,
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """
     Records hardware and duration telemetry for a completed or running pipeline.
@@ -118,6 +120,7 @@ def record_telemetry(
 def detect_anomalies(
     req: AnomalyDetectionRequest,
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """
     Evaluates observed execution against statistical historical baselines (Z-Scores).
@@ -169,7 +172,10 @@ def detect_anomalies(
 
 
 @router.post("/correlate-failures", status_code=status.HTTP_200_OK)
-def correlate_failures(req: CorrelationRequest):
+def correlate_failures(
+    req: CorrelationRequest,
+    _authorized: bool = Depends(verify_runner_token),
+):
     """
     Groups and correlates failure events by normalized error signature, repository, and workflow.
     """

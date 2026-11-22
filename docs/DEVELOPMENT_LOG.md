@@ -148,3 +148,35 @@ Chronological record of design decisions, implementation phases, benchmarks, and
   - **Documentation & Verification Synchronization:**
     - Created `docs/TESTING_AND_EVALUATION.md` documenting empirical methodology, test matrices, and benchmark reports.
     - Updated `README.md` with complete quickstart, testing, and security scanning commands.
+
+
+---
+
+## 2026-11-22 — Phase 10: Final Independent Audit Remediation & Defense Hardening
+- **Status:** Complete (Branch: `final-audit-remediation`)
+- **Key Deliverables:**
+  - **Comprehensive API Authentication:**
+    - Applied constant-time `hmac.compare_digest` runner token verification (`X-Runner-Token`) across all write endpoints: `POST /api/v1/plans/generate`, `POST /api/v1/telemetry/record`, `POST /api/v1/telemetry/detect-anomalies`, `POST /api/v1/telemetry/correlate-failures`, `POST /api/v1/security/scan`, `POST /api/v1/predictions/predict`, and `POST /api/v1/predictions/train`.
+    - Maintained public accessibility for read-only health, dashboard, and metadata routes.
+    - Updated `scripts/run_optimized_ci.py` to transmit `X-Runner-Token` on all plan generation and telemetry requests.
+    - Added comprehensive integration tests (`tests/test_api_authentication.py`) validating missing token (401), invalid token (403), valid token (200), and testing-environment bypass.
+  - **Secret & Configuration Hardening:**
+    - Added `@model_validator` in `app/core/config.py` that fails fast on startup in `production` if default secrets or insecure passwords are used.
+    - Updated `docker-compose.yml` with environment variable interpolation (`${POSTGRES_PASSWORD:-...}`) and fallback defaults.
+    - Updated `.env.example` with clear instructions on generating 32-byte cryptographically secure keys.
+  - **CI Workflow Enhancements:**
+    - Added `ruff format --check .` to `.github/workflows/ci.yml`.
+    - Removed `|| true` from `pip-audit` to ensure vulnerable dependencies fail CI.
+    - Added dedicated Gitleaks secret detection action step.
+    - Restricted permissions to `contents: read`.
+  - **Benchmark & Academic Integrity:**
+    - Updated `scripts/benchmark_e2e.py` to dynamically compute safety policy compliance from evaluated scenarios instead of hardcoding strings.
+    - Explicitly distinguished test-count reduction (62.5%) from runtime improvement (5.9%).
+    - Honestly reported escaped-defect rate as `NOT_MEASURED (Requires controlled defect-injection experiments for mathematical quantification)`.
+    - Added explicit assertion checks verifying all pytest executions exit cleanly with code 0 and candidate test selections are non-empty.
+  - **ML Provenance Tracking:**
+    - Added `model_metadata.json` serialization in `app/ml/model_manager.py` explicitly distinguishing `SYNTHETIC_BOOTSTRAP` from genuine historical pipeline telemetry.
+    - Added `can_predict()` enforcing Safety Rule 17: synthetic bootstrap samples do not satisfy genuine historical run requirements.
+    - Added unit tests in `tests/test_model_manager.py` verifying provenance metadata and Rule 17 enforcement.
+  - **Test Suite Expansion:**
+    - Expanded automated test suite from 133 to **141 tests** with a **100% pass rate**.

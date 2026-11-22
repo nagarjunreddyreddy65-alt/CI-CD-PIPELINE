@@ -133,9 +133,18 @@ If any dynamic import call is encountered anywhere in the repository, the graph 
 ### Q11: What is the exact benchmark savings demonstrated by your project?
 **Answer:**
 In our end-to-end benchmark (`data/e2e_benchmark_report.json`):
-- **Full Suite Baseline:** 24 target tests executed in 1.701 seconds.
-- **Optimized Leaf Change:** 9 target tests executed in 1.600 seconds (**62.5% reduction in executed tests**).
-- **Safety Fallback Scenarios (Auth, Schema, ML Anomaly):** 100% full-suite test coverage enforced, achieving **0.0% escaped defects** and **100.0% safety policy compliance**.
+- **Full Suite Baseline:** 24 target tests executed in 1.791 seconds.
+- **Optimized Leaf Change:** 9 target tests executed in 1.685 seconds (**62.5% reduction in executed test count**).
+- **Safety Fallback Scenarios (Auth, Schema, ML Anomaly):** 100% full-suite test coverage enforced, achieving **100.0% safety policy compliance** across evaluated scenarios.
+- **Escaped Defect Rate:** Formally reported as *NOT MEASURED* on arbitrary codebases because rigorous quantification requires a dedicated synthetic defect-injection framework; within the target application's test suite, 0 regressions escaped.
+
+### Q12: How are API endpoints secured against unauthorized calls from malicious actors?
+**Answer:**
+All runner-facing write and execution plan endpoints (`/plans/generate`, `/telemetry/*`, `/security/scan`, `/predictions/*`) enforce constant-time HMAC runner token verification (`hmac.compare_digest`) via the `X-Runner-Token` header. Missing tokens return HTTP 401; invalid tokens return HTTP 403. Public read-only endpoints (health probes, dashboard views, and metrics) remain accessible without authentication. In production (`ENVIRONMENT=production`), the application validates that default keys and passwords are overridden on startup.
+
+### Q13: How does your ML pipeline prevent synthetic bootstrap data from polluting production decisions?
+**Answer:**
+Early training uses synthetic bootstrap data to initialize model weights. However, `ModelManager` writes `model_metadata.json` explicitly tagging provenance as `SYNTHETIC_BOOTSTRAP` and setting `is_production_ready: false`. Under **Safety Rule 17**, synthetic samples do NOT count toward the required 15 genuine pipeline execution runs. Until 15 genuine historical runs are recorded in the database, the decision engine deterministically forces a Full Suite Fallback.
 
 ---
 

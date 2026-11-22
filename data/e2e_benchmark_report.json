@@ -1,0 +1,75 @@
+{
+  "benchmark_timestamp": "2026-11-22 07:20:47Z",
+  "total_available_target_tests": 24,
+  "scenarios": {
+    "baseline_full_suite": {
+      "duration_sec": 1.802,
+      "exit_code": 0,
+      "cpu_percent": 5.8,
+      "memory_mb": 11573.2,
+      "status": "PASSED",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.34s ==============================\n",
+      "tests_executed": 24,
+      "decision": "FULL_SUITE_BASELINE",
+      "reduction_pct": 0.0
+    },
+    "optimized_math_change": {
+      "duration_sec": 1.619,
+      "exit_code": 0,
+      "cpu_percent": 4.0,
+      "memory_mb": 11547.2,
+      "status": "PASSED",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.12s ==============================\n",
+      "tests_executed": 9,
+      "decision": "OPTIMIZED",
+      "reduction_pct": 62.5,
+      "fallback_triggered": false
+    },
+    "safety_fallback_auth": {
+      "duration_sec": 1.747,
+      "exit_code": 0,
+      "cpu_percent": 26.2,
+      "memory_mb": 11555.5,
+      "status": "PASSED",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.33s ==============================\n",
+      "tests_executed": 24,
+      "decision": "FULL_SUITE_FALLBACK",
+      "fallback_triggered": true,
+      "fallback_reason": "Safety Rule 2: Authentication or authorization changes detected",
+      "reduction_pct": 0.0
+    },
+    "safety_fallback_migration": {
+      "duration_sec": 1.754,
+      "exit_code": 0,
+      "cpu_percent": 15.5,
+      "memory_mb": 11541.2,
+      "status": "PASSED",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.35s ==============================\n",
+      "tests_executed": 24,
+      "decision": "FULL_SUITE_FALLBACK",
+      "fallback_triggered": true,
+      "fallback_reason": "Safety Rule 1: Database migration or schema modification detected",
+      "reduction_pct": 0.0
+    },
+    "ml_high_risk_fallback": {
+      "decision": "FULL_SUITE_FALLBACK",
+      "fallback_triggered": true,
+      "fallback_reason": "Safety Rule 18: Prediction confidence score below threshold (< 0.70) (Confidence (0.45) < threshold (0.70))",
+      "safety_rules": [
+        "RULE_18_LOW_PREDICTION_CONFIDENCE"
+      ]
+    }
+  },
+  "summary": {
+    "baseline_duration_sec": 1.802,
+    "optimized_duration_sec": 1.619,
+    "runtime_savings_sec": 0.183,
+    "runtime_savings_pct": 10.2,
+    "test_count_reduction_pct_on_leaf": 62.5,
+    "safety_policy_compliance_rate_pct": 100.0,
+    "safety_scenarios_evaluated_count": 3,
+    "safety_scenarios_enforced_count": 3,
+    "escaped_defects_rate": "NOT_MEASURED (Empirical defect-injection experiments required for rigorous quantification)",
+    "active_safety_rules_count": 21
+  }
+}

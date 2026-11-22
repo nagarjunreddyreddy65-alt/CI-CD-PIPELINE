@@ -96,12 +96,14 @@ def get_commit_metadata() -> dict:
 
 
 def request_plan_from_api(api_url: str, payload: dict) -> dict:
-    """Requests execution plan from FastAPI backend with timeout."""
+    """Requests execution plan from FastAPI backend with timeout and runner auth."""
     if httpx is None:
         raise RuntimeError("httpx is not installed")
 
+    runner_token = os.getenv("RUNNER_API_KEY", "autonomous_devops_runner_dev_api_key_2026")
     endpoint = f"{api_url.rstrip('/')}/api/v1/plans/generate"
-    response = httpx.post(endpoint, json=payload, timeout=8.0)
+    headers = {"X-Runner-Token": runner_token}
+    response = httpx.post(endpoint, json=payload, headers=headers, timeout=8.0)
     response.raise_for_status()
     return response.json()
 
@@ -265,9 +267,11 @@ def main():
                 "total_duration_sec": duration_sec,
                 "status": "SUCCESS" if returncode == 0 else "FAILED",
             }
+            runner_token = os.getenv("RUNNER_API_KEY", "autonomous_devops_runner_dev_api_key_2026")
             httpx.post(
                 f"{args.api_url.rstrip('/')}/api/v1/telemetry/record",
                 json=telemetry_payload,
+                headers={"X-Runner-Token": runner_token},
                 timeout=5.0,
             )
             print("📡 Execution telemetry reported to backend.")
