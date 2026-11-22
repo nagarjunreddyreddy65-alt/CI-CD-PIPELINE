@@ -94,7 +94,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ## 🔒 Security & API Access Control
 
-All runner-facing write endpoints require constant-time HMAC authentication using the `X-Runner-Token` header:
+All runner-facing write endpoints require constant-time pre-shared token comparison via `hmac.compare_digest` with the `X-Runner-Token` header:
 - `POST /api/v1/plans/generate` — Generates execution plans.
 - `POST /api/v1/analysis/diff` — Evaluates commit diff and maps test dependencies.
 - `POST /api/v1/telemetry/record` — Records CPU, memory, and duration telemetry.
@@ -107,7 +107,7 @@ Public read-only endpoints:
 - `GET /dashboard/*`, `GET /api/v1/dashboard/metrics`
 - `GET /api/v1/analysis/graph`, `GET /api/v1/predictions/models`
 
-In production (`ENVIRONMENT=production`), startup configuration validation strictly enforces that default secrets (`SECRET_KEY`, `RUNNER_API_KEY`) and default database passwords are overridden.
+In production (`ENVIRONMENT=production`), startup configuration validation strictly enforces that default secrets (`SECRET_KEY`, `RUNNER_API_KEY`) and default database passwords are overridden. Path traversal protection is enforced across all file input payloads.
 
 ---
 
@@ -115,7 +115,7 @@ In production (`ENVIRONMENT=production`), startup configuration validation stric
 
 All core components, API endpoints, sample application modules, safety rules, and authentication layers are strictly verified:
 
-### 1. Run Complete Test Suite (141 tests, 100% pass rate)
+### 1. Run Complete Test Suite (161 tests, 100% pass rate)
 ```bash
 python -m pytest tests/ tests_sample_app/ -v
 ```
@@ -125,20 +125,20 @@ python -m pytest tests/ tests_sample_app/ -v
 ruff check .
 ruff format --check .
 ```
-*(0 violations across all repository files; 100% formatted)*
+*(0 violations across all 91 repository files; 100% formatted)*
 
 ### 3. Security Auditing (Bandit SAST, pip-audit SCA, Gitleaks)
 ```bash
 bandit -r app sample_app -ll -ii
 pip-audit -r requirements.txt --desc on
 ```
-*(0 security issues identified; 0 dependency vulnerabilities)*
+*(0 security issues identified across 4,633 LOC; 0 dependency vulnerabilities)*
 
-### 4. End-to-End Benchmarking
+### 4. End-to-End Benchmarking & Controlled Defect Injection
 ```bash
 python scripts/benchmark_e2e.py
 ```
-*(Executes 5 benchmark scenarios, dynamically calculates safety compliance, and exports `data/e2e_benchmark_report.json`)*
+*(Executes 15 benchmark scenarios, controlled defect injection, dynamically calculates safety compliance, and exports `data/e2e_benchmark_report.json`)*
 
 ---
 

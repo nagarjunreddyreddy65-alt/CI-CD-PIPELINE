@@ -51,6 +51,24 @@ def test_analysis_diff_api_auth_fallback(client):
     assert data["selected_tests_count"] == data["total_repository_tests"]
 
 
+def test_analysis_diff_api_path_traversal_rejected(client):
+    """Tests POST /api/v1/analysis/diff rejects path traversal attempts."""
+    payload = {
+        "repository_path": ".",
+        "files": [
+            {
+                "path": "../../../etc/passwd",
+                "change_type": "MODIFIED",
+                "lines_added": 1,
+                "lines_deleted": 0,
+            }
+        ],
+    }
+    response = client.post("/api/v1/analysis/diff", json=payload)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "path traversal is forbidden" in response.json()["detail"]
+
+
 def test_analysis_graph_summary(client):
     """Tests GET /api/v1/analysis/graph returns topology metrics."""
     response = client.get("/api/v1/analysis/graph")

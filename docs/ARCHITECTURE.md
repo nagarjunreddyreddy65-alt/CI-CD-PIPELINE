@@ -72,4 +72,5 @@ Machine learning models provide probabilistic insights (failure likelihood and e
 5. **ML Prediction:** The backend extracts pre-execution features and predicts failure risk and runtime.
 6. **Safety Evaluation:** The backend evaluates the **21 Safety Fallback Rules**. If any rule triggers (e.g., database schema change), the plan enforces `decision = "FULL_SUITE"`. Otherwise, `decision = "OPTIMIZED"`.
 7. **Test Execution:** The isolated runner receives the plan, runs the exact test subset (or full suite), and records timing.
-8. **Result & Telemetry Reporting:** Test results and CPU/RAM metrics are posted back to `POST /api/v1/telemetry/report` for long-term analytics and anomaly detection.
+8. **Result & Telemetry Reporting:** Test results and CPU/RAM metrics are posted back to `POST /api/v1/telemetry/record` for long-term analytics and anomaly detection.
+9. **Access Control & Path Traversal:** Runner write endpoints require constant-time pre-shared key validation (`X-Runner-Token`) using `hmac.compare_digest`. All file input paths are strictly validated against directory traversal attacks. Production mode enforces resilient PostgreSQL connectivity without silent local degradation.

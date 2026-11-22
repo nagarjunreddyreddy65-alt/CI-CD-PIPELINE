@@ -30,14 +30,24 @@ def test_predict_endpoint(client):
 
 def test_train_endpoint(client):
     """Tests POST /api/v1/predictions/train triggers model retraining."""
-    payload = {"n_samples": 25}
+    payload = {"n_samples": 25, "data_source": "SYNTHETIC_BOOTSTRAP"}
     response = client.post("/api/v1/predictions/train", json=payload)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
     assert data["success"] is True
     assert data["data"]["status"] == "TRAINED_AND_SAVED"
+    assert data["data"]["provenance"] == "SYNTHETIC_BOOTSTRAP"
+    assert data["data"]["is_production_ready"] is False
     assert data["data"]["samples"] == 25
+
+
+def test_train_endpoint_genuine_telemetry_insufficient_samples(client):
+    """Tests POST /api/v1/predictions/train rejects genuine training when < 15 runs exist."""
+    payload = {"n_samples": 25, "data_source": "GENUINE_PIPELINE_TELEMETRY"}
+    response = client.post("/api/v1/predictions/train", json=payload)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "minimum required is 15" in response.json()["detail"]
 
 
 def test_get_models_status_endpoint(client):

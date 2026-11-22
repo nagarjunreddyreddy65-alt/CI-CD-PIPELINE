@@ -146,7 +146,10 @@ class ChangeAnalyzer:
 
     def classify_file(self, file_path: str) -> dict[str, Any]:
         """Classifies a file path for sensitivity, language, and test association."""
-        norm_path = file_path.replace("\\", "/").lstrip("/")
+        clean_path = os.path.normpath(file_path).replace("\\", "/")
+        if clean_path.startswith("../") or clean_path == ".." or "/../" in clean_path:
+            raise ValueError(f"Path traversal detected in file path: {file_path}")
+        norm_path = clean_path.lstrip("/")
         ext = os.path.splitext(norm_path)[1].lower()
 
         categories: list[str] = []

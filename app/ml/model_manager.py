@@ -102,17 +102,24 @@ class ModelManager:
         n_samples: int = 50,
         data_source: str = "SYNTHETIC_BOOTSTRAP",
         genuine_historical_runs_count: int = 0,
+        training_data: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
     ) -> dict[str, Any]:
         """
         Trains both models on provided or generated samples and persists artifacts with provenance metadata.
         Explicitly tracks whether training used synthetic bootstrap data or genuine telemetry.
         """
-        if n_samples < settings.MIN_TRAINING_RUNS:
-            raise ValueError(
-                f"Cannot train models: {n_samples} samples is less than the required minimum of {settings.MIN_TRAINING_RUNS}"
-            )
+        if data_source == "SYNTHETIC_BOOTSTRAP":
+            # Synthetic bootstrap samples MUST NEVER count toward genuine historical runs
+            genuine_historical_runs_count = 0
 
-        X, y_fail, y_time = self.generate_synthetic_historical_data(n_samples)
+        if training_data is not None:
+            X, y_fail, y_time = training_data
+        else:
+            if n_samples < settings.MIN_TRAINING_RUNS:
+                raise ValueError(
+                    f"Cannot train models: {n_samples} samples is less than the required minimum of {settings.MIN_TRAINING_RUNS}"
+                )
+            X, y_fail, y_time = self.generate_synthetic_historical_data(n_samples)
 
         fail_metrics = self.failure_predictor.train(X, y_fail)
         time_metrics = self.runtime_predictor.train(X, y_time)
@@ -131,7 +138,7 @@ class ModelManager:
 
         metadata = {
             "provenance": data_source,
-            "sample_count": n_samples,
+            "sample_count": len(X),
             "genuine_historical_runs_count": genuine_historical_runs_count,
             "is_production_ready": is_production_ready,
             "trained_at": datetime.now(UTC).isoformat(),

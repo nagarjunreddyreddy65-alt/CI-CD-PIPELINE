@@ -4,6 +4,7 @@ Provides endpoints to generate, query, and audit deterministic optimization plan
 """
 
 import json
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -19,8 +20,16 @@ router = APIRouter(prefix="/plans", tags=["Execution Plans"])
 
 
 class ChangedFileItem(BaseModel):
-    file_path: str = Field(..., json_schema_extra={"example": "sample_app/utils/math_ops.py"})
-    change_type: str = Field("MODIFIED", json_schema_extra={"example": "MODIFIED"})
+    file_path: str = Field(
+        ...,
+        max_length=1024,
+        json_schema_extra={"example": "sample_app/utils/math_ops.py"},
+    )
+    change_type: str = Field(
+        "MODIFIED",
+        max_length=50,
+        json_schema_extra={"example": "MODIFIED"},
+    )
     lines_added: int = Field(5, ge=0)
     lines_deleted: int = Field(2, ge=0)
 
@@ -28,18 +37,35 @@ class ChangedFileItem(BaseModel):
 class PlanGenerationRequest(BaseModel):
     repository_name: str = Field(
         "AutonomousDevOps/CI-CD-PIPELINE",
+        max_length=255,
         json_schema_extra={"example": "AutonomousDevOps/CI-CD-PIPELINE"},
     )
-    commit_hash: str = Field(..., json_schema_extra={"example": "c81a293f0b4d"})
-    branch: str = Field("main", json_schema_extra={"example": "main"})
-    author_name: str = Field("MCA Student", json_schema_extra={"example": "MCA Student"})
+    commit_hash: str = Field(
+        ...,
+        max_length=64,
+        json_schema_extra={"example": "c81a293f0b4d"},
+    )
+    branch: str = Field(
+        "main",
+        max_length=100,
+        json_schema_extra={"example": "main"},
+    )
+    author_name: str = Field(
+        "MCA Student",
+        max_length=150,
+        json_schema_extra={"example": "MCA Student"},
+    )
     author_email: str = Field(
-        "student@example.edu", json_schema_extra={"example": "student@example.edu"}
+        "student@example.edu",
+        max_length=255,
+        json_schema_extra={"example": "student@example.edu"},
     )
     commit_message: str = Field(
-        "Update math operation utility functions", json_schema_extra={"example": "Update math ops"}
+        "Update math operation utility functions",
+        max_length=1000,
+        json_schema_extra={"example": "Update math ops"},
     )
-    changed_files: list[ChangedFileItem]
+    changed_files: list[ChangedFileItem] = Field(..., max_length=1000)
     historical_failure_rate: float = Field(0.05, ge=0.0, le=1.0)
     previous_execution_duration: float = Field(25.0, ge=0.0)
     historical_runs_count: int = Field(20, ge=0)
@@ -79,6 +105,20 @@ def generate_execution_plan(
     3. Evaluates 21 Safety Policy rules.
     4. Issues OPTIMIZED or FULL_SUITE plan and persists to DB.
     """
+    # Reject path traversal in changed files
+    for cf in req.changed_files:
+        clean = os.path.normpath(cf.file_path).replace("\\", "/")
+        if (
+            clean.startswith("../")
+            or clean == ".."
+            or "/../" in clean
+            or os.path.isabs(cf.file_path)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file path: path traversal is forbidden ('{cf.file_path}')",
+            )
+
     engine = DecisionEngine(root_dir=".")
 
     file_entries = [

@@ -1,6 +1,6 @@
 """
 Security and Authentication Helpers.
-Validates runner tokens and HMAC webhook signatures.
+Validates runner authentication tokens and HMAC webhook signatures.
 """
 
 import hashlib
@@ -15,6 +15,10 @@ def verify_runner_token(x_runner_token: str | None = Header(None)) -> bool:
     """
     Validates that incoming requests from isolated GitHub Actions runners
     provide a valid pre-shared runner authentication key.
+
+    Uses constant-time string comparison (hmac.compare_digest) to prevent
+    timing side-channel attacks. Note: this verifies a pre-shared token equality,
+    not an HMAC signature calculation.
     """
     if settings.ENVIRONMENT == "testing" and not x_runner_token:
         return True
@@ -32,7 +36,7 @@ def verify_runner_token(x_runner_token: str | None = Header(None)) -> bool:
 
 
 def verify_github_signature(payload_body: bytes, signature_header: str | None) -> bool:
-    """Validates GitHub webhook SHA-256 HMAC signature."""
+    """Validates GitHub webhook SHA-256 HMAC signature against secret."""
     if not settings.GITHUB_WEBHOOK_SECRET:
         return True
     if not signature_header or not signature_header.startswith("sha256="):

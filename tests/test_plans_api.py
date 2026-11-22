@@ -121,3 +121,26 @@ def test_api_list_plans():
 def test_api_plan_not_found():
     response = client.get("/api/v1/plans/non-existent-uuid-99999")
     assert response.status_code == 404
+
+
+def test_api_generate_plan_path_traversal_rejected():
+    """Tests POST /api/v1/plans/generate rejects path traversal attempts."""
+    payload = {
+        "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
+        "commit_hash": "c81a293f0b4d",
+        "branch": "main",
+        "author_name": "Developer",
+        "author_email": "dev@example.com",
+        "commit_message": "Exploit attempt",
+        "changed_files": [
+            {
+                "file_path": "../../etc/shadow",
+                "change_type": "MODIFIED",
+                "lines_added": 1,
+                "lines_deleted": 0,
+            }
+        ],
+    }
+    response = client.post("/api/v1/plans/generate", json=payload)
+    assert response.status_code == 400
+    assert "path traversal is forbidden" in response.json()["detail"]
