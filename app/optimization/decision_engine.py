@@ -133,7 +133,40 @@ class DecisionEngine:
         selected_candidate_tests = mapping_res.affected_test_identifiers
         affected_modules = mapping_res.affected_modules
 
-        # Step 3: Feature Extraction (guaranteed pre-execution only)
+        # Step 3: Historical Telemetry Resolution (Server-side DB verification takes precedence)
+        if db is not None:
+            try:
+                completed_db_runs = (
+                    db.query(PipelineRun)
+                    .filter(PipelineRun.status.in_(["SUCCESS", "FAILED"]))
+                    .order_by(PipelineRun.created_at.desc())
+                    .limit(50)
+                    .all()
+                )
+                effective_historical_runs = len(completed_db_runs)
+                if effective_historical_runs >= 15:
+                    failed_runs = sum(1 for r in completed_db_runs if r.status == "FAILED")
+                    effective_failure_rate = round(failed_runs / effective_historical_runs, 4)
+                    latest_run = completed_db_runs[0]
+                    effective_prev_duration = (
+                        float(latest_run.total_duration_sec)
+                        if latest_run.total_duration_sec and latest_run.total_duration_sec > 0
+                        else 25.0
+                    )
+                else:
+                    effective_failure_rate = 0.05
+                    effective_prev_duration = 25.0
+            except SQLAlchemyError as e:
+                logger.warning(f"Failed to query historical runs from DB: {e}")
+                effective_historical_runs = 0
+                effective_failure_rate = 0.05
+                effective_prev_duration = 25.0
+        else:
+            effective_historical_runs = historical_runs_count
+            effective_failure_rate = historical_failure_rate
+            effective_prev_duration = previous_execution_duration
+
+        # Step 4: Feature Extraction (guaranteed pre-execution only)
         features: PipelineFeatures = self.feature_extractor.extract(
             changed_files_count=change_res.total_changed_files,
             lines_added=change_res.total_lines_added,
@@ -142,11 +175,11 @@ class DecisionEngine:
             selected_tests_count=len(selected_candidate_tests),
             is_sensitive_change=change_res.is_sensitive,
             has_test_file_changes=change_res.has_test_changes,
-            historical_failure_rate=historical_failure_rate,
-            previous_execution_duration=previous_execution_duration,
+            historical_failure_rate=effective_failure_rate,
+            previous_execution_duration=effective_prev_duration,
         )
 
-        # Step 4: ML Predictions
+        # Step 5: ML Predictions
         fail_res = self.model_manager.failure_predictor.predict(features)
         fail_prob = fail_res.predicted_failure_probability
         fail_class = fail_res.predicted_failure_class
@@ -154,21 +187,6 @@ class DecisionEngine:
 
         runtime_res = self.model_manager.runtime_predictor.predict(features)
         pred_duration = runtime_res.predicted_duration_sec
-
-        # Determine genuine historical runs (server-side DB verification takes precedence)
-        if db is not None:
-            try:
-                genuine_db_runs = (
-                    db.query(PipelineRun)
-                    .filter(PipelineRun.status.in_(["SUCCESS", "FAILED"]))
-                    .count()
-                )
-                effective_historical_runs = genuine_db_runs
-            except SQLAlchemyError as e:
-                logger.warning(f"Failed to query historical runs from DB: {e}")
-                effective_historical_runs = 0
-        else:
-            effective_historical_runs = historical_runs_count
 
         # Ensure models are loaded and verified
         is_trained = (
@@ -183,7 +201,7 @@ class DecisionEngine:
             )
 
         models_status = self.model_manager.get_models_status()
-        model_artifacts_exist = (
+        base_artifacts_exist = (
             models_status["failure_predictor"]["model_file_exists"]
             and models_status["runtime_predictor"]["model_file_exists"]
             and is_trained
@@ -193,7 +211,12 @@ class DecisionEngine:
             genuine_historical_runs_count=effective_historical_runs
         )
 
-        # Step 5: Construct Safety Context & Evaluate Deterministic Rules
+        # If model artifacts are missing, corrupt, synthetic, or uncertified, flag Rule 14
+        model_artifacts_exist = base_artifacts_exist and (
+            "Safety Rule 14" not in (can_pred_reason if not can_pred else "")
+        )
+
+        # Step 6: Construct Safety Context & Evaluate Deterministic Rules
         # Check AST parse and dynamic import status from mapping
         has_ast_error = "Safety Rule 9" in (mapping_res.fallback_reason or "")
         has_dynamic_imp = "Safety Rule 10" in (mapping_res.fallback_reason or "")
@@ -241,10 +264,14 @@ class DecisionEngine:
         # Final Decision Formulation
         triggered_rules_names = [t.rule_code.value for t in safety_res.triggered_rules]
 
-        if not safety_res.is_safe_to_optimize:
+        if not can_pred or not safety_res.is_safe_to_optimize:
             decision = ExecutionDecision.FULL_SUITE
             fallback_triggered = True
-            fallback_reason = safety_res.primary_fallback_reason
+            fallback_reason = (
+                safety_res.primary_fallback_reason
+                if not safety_res.is_safe_to_optimize
+                else can_pred_reason
+            )
             decision_reason = (
                 f"Full test suite required by deterministic safety policy: {fallback_reason}."
             )
@@ -278,7 +305,11 @@ class DecisionEngine:
 
         # Calculate estimated time saved
         # If optimized: saved time = (baseline_duration) * (reduction_pct / 100)
-        baseline_time = previous_execution_duration if previous_execution_duration > 0 else 30.0
+        baseline_time = (
+            effective_prev_duration
+            if (effective_prev_duration and effective_prev_duration > 0)
+            else 30.0
+        )
         if decision == ExecutionDecision.OPTIMIZED:
             estimated_time_saved = round(
                 baseline_time * (selected_plan.reduction_percentage / 100.0), 2

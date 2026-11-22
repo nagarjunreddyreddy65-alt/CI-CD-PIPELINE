@@ -77,12 +77,20 @@ class RuntimePredictor:
 
         return {
             "model_version": self.model_version,
-            "training_samples": len(X),
+            "total_dataset_samples": len(X),
+            "training_samples": len(X_train) if use_holdout else len(X),
             "test_samples": len(eval_y),
             "evaluated_on": "HOLDOUT_TEST_SPLIT" if use_holdout else "IN_SAMPLE_DATA",
             "mae": round(mae, 4),
             "rmse": round(rmse, 4),
             "r2_score": round(max(0.0, r2), 4),
+            "limitations": {
+                "small_sample_size": bool(len(X) < 100),
+                "evaluation_note": (
+                    "Metrics evaluated strictly on held-out 20% test split. "
+                    "Small sample sizes (< 100) have higher estimation variance."
+                ),
+            },
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

@@ -27,9 +27,16 @@ def sqlite_db_session():
 
 @pytest.fixture
 def trained_model_manager(tmp_path):
-    """Initializes and trains model manager with bootstrap data."""
+    """Initializes and trains model manager with genuine telemetry schema."""
     manager = ModelManager(registry_dir=str(tmp_path))
-    manager.train_and_persist(n_samples=40)
+    X, y_fail, y_time = manager.generate_synthetic_historical_data(n_samples=40)
+    manager.train_and_persist(
+        n_samples=40,
+        data_source="GENUINE_PIPELINE_TELEMETRY",
+        genuine_historical_runs_count=40,
+        training_data=(X, y_fail, y_time),
+        is_production_ready=True,
+    )
     return manager
 
 

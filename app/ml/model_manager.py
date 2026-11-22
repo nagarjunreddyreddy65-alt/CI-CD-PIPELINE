@@ -37,52 +37,97 @@ class ModelManager:
         self, runs: list[Any]
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Extracts pre-execution feature vectors and execution targets from genuine historical database records.
+        Extracts genuine pre-execution feature vectors and execution targets from historical database records.
+        Eliminates training-data leakage:
+        1. NEVER incorporates post-execution fields like 'fallback_triggered' or 'error_message' into input features.
+        2. NEVER uses the current run's 'total_duration_sec' as its own previous duration feature.
+        3. Preceding duration and failure rate are calculated strictly from chronologically antecedent runs.
+        4. When 'Prediction.features_json' was captured pre-execution, uses those validated features.
+        5. Incomplete, non-terminal, or zero-duration runs are excluded.
         Returns:
             X: features array (N, 10)
             y_fail: binary failure outcome array (N,) (1 = FAILED, 0 = SUCCESS)
             y_time: duration in seconds (N,)
         """
+        # Filter for valid completed runs
+        valid_runs = []
+        for r in runs:
+            status_val = getattr(r, "status", None)
+            dur = float(getattr(r, "total_duration_sec", 0.0) or 0.0)
+            if status_val in ["SUCCESS", "FAILED"] and dur > 0.0:
+                valid_runs.append(r)
+
+        # Sort chronologically by created_at if available
+        def _get_sort_key(item: Any) -> float:
+            created = getattr(item, "created_at", None)
+            if created and hasattr(created, "timestamp"):
+                return float(created.timestamp())
+            return 0.0
+
+        valid_runs.sort(key=_get_sort_key)
+
         X_list = []
         y_fail = []
         y_time = []
 
-        for r in runs:
-            # 1. Feature extraction
+        for i, r in enumerate(valid_runs):
             feat_vec = None
-            pred = getattr(r, "prediction", None)
+
+            # 1. First preference: Check if pre-execution features were logged at plan-generation time
+            preds = getattr(r, "predictions", None)
+            pred = preds[0] if preds and len(preds) > 0 else getattr(r, "prediction", None)
             if pred and getattr(pred, "features_json", None):
                 try:
                     f = json.loads(pred.features_json)
                     if isinstance(f, dict):
+                        # Ensure strictly pre-execution keys
                         feat_vec = [
-                            f.get("changed_files_count", 1),
-                            f.get("lines_added", 10),
-                            f.get("lines_deleted", 2),
-                            f.get("total_lines_changed", 12),
-                            f.get("affected_modules_count", 1),
-                            f.get("selected_tests_count", 5),
-                            f.get("is_sensitive_change", 0),
-                            f.get("has_test_file_changes", 0),
-                            f.get("historical_failure_rate", 0.05),
-                            f.get("previous_execution_duration", 25.0),
+                            float(f.get("changed_files_count", 1)),
+                            float(f.get("lines_added", 10)),
+                            float(f.get("lines_deleted", 2)),
+                            float(f.get("total_lines_changed", 12)),
+                            float(f.get("affected_modules_count", 1)),
+                            float(f.get("selected_tests_count", 5)),
+                            float(1.0 if f.get("is_sensitive_change") else 0.0),
+                            float(1.0 if f.get("has_test_file_changes") else 0.0),
+                            float(f.get("historical_failure_rate", 0.05)),
+                            float(f.get("previous_execution_duration", 25.0)),
                         ]
                 except (json.JSONDecodeError, TypeError):
                     feat_vec = None
 
+            # 2. Second preference: Reconstruct strictly from pre-execution commit/file entities
             if feat_vec is None:
-                # Compute from commit & plan entities
                 commit = getattr(r, "commit", None)
                 changed_files = getattr(commit, "changed_files", []) if commit else []
                 n_files = max(1, len(changed_files))
                 lines_add = sum(getattr(cf, "lines_added", 0) for cf in changed_files)
                 lines_del = sum(getattr(cf, "lines_deleted", 0) for cf in changed_files)
                 tot_lines = lines_add + lines_del
+
+                # Genuine pre-execution sensitivity: inspect file paths only; NEVER fallback_triggered!
+                sensitive_keywords = [
+                    "alembic",
+                    "migration",
+                    "auth",
+                    "security",
+                    "token",
+                    "jwt",
+                    "payment",
+                    "billing",
+                    "crypto",
+                    "requirements",
+                    "lock",
+                    "workflow",
+                ]
                 is_sens = (
                     1
-                    if (
-                        getattr(r, "fallback_triggered", False)
-                        or any(getattr(cf, "is_sensitive", False) for cf in changed_files)
+                    if any(
+                        getattr(cf, "is_sensitive", False)
+                        or any(
+                            kw in getattr(cf, "file_path", "").lower() for kw in sensitive_keywords
+                        )
+                        for cf in changed_files
                     )
                     else 0
                 )
@@ -94,22 +139,33 @@ class ModelManager:
                 plan = getattr(r, "execution_plan", None)
                 sel_tests = getattr(plan, "selected_tests_count", 5) if plan else 5
 
+                # Preceding execution history: strictly from runs PRIOR to run i
+                if i > 0:
+                    prior_runs = valid_runs[:i]
+                    prior_fails = sum(1 for p in prior_runs if getattr(p, "status", "") == "FAILED")
+                    hist_fail_rate = round(prior_fails / len(prior_runs), 4)
+                    prev_dur = float(getattr(valid_runs[i - 1], "total_duration_sec", 25.0) or 25.0)
+                else:
+                    # Documented baseline for the very first execution in repository history
+                    hist_fail_rate = 0.05
+                    prev_dur = 25.0
+
                 feat_vec = [
-                    n_files,
-                    lines_add,
-                    lines_del,
-                    tot_lines,
-                    max(1, n_files),
-                    sel_tests,
-                    is_sens,
-                    has_tests,
-                    0.05,
-                    max(5.0, float(getattr(r, "total_duration_sec", 25.0) or 25.0)),
+                    float(n_files),
+                    float(lines_add),
+                    float(lines_del),
+                    float(tot_lines),
+                    float(max(1, n_files)),
+                    float(sel_tests),
+                    float(is_sens),
+                    float(has_tests),
+                    float(hist_fail_rate),
+                    float(prev_dur),
                 ]
 
             X_list.append(feat_vec)
 
-            # 2. Target extraction
+            # Target extraction: genuine completed outcome
             status_val = getattr(r, "status", "SUCCESS")
             failed = 1 if status_val == "FAILED" else 0
             y_fail.append(failed)
@@ -193,6 +249,7 @@ class ModelManager:
         data_source: str = "SYNTHETIC_BOOTSTRAP",
         genuine_historical_runs_count: int = 0,
         training_data: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+        is_production_ready: bool | None = None,
     ) -> dict[str, Any]:
         """
         Trains both models on provided or generated samples and persists artifacts with provenance metadata.
@@ -201,6 +258,11 @@ class ModelManager:
         if data_source == "SYNTHETIC_BOOTSTRAP":
             # Synthetic bootstrap samples MUST NEVER count toward genuine historical runs
             genuine_historical_runs_count = 0
+            is_prod_ready = False
+        else:
+            is_prod_ready = genuine_historical_runs_count >= settings.MIN_TRAINING_RUNS and (
+                is_production_ready if is_production_ready is not None else True
+            )
 
         if training_data is not None:
             X, y_fail, y_time = training_data
@@ -220,25 +282,23 @@ class ModelManager:
         joblib.dump(self.failure_predictor, fail_path)
         joblib.dump(self.runtime_predictor, time_path)
 
-        # Write provenance metadata
-        is_production_ready = (
-            data_source == "GENUINE_PIPELINE_TELEMETRY"
-            and genuine_historical_runs_count >= settings.MIN_TRAINING_RUNS
-        )
-
         metadata = {
             "provenance": data_source,
             "sample_count": len(X),
             "genuine_historical_runs_count": genuine_historical_runs_count,
-            "is_production_ready": is_production_ready,
+            "is_production_ready": is_prod_ready,
             "trained_at": datetime.now(UTC).isoformat(),
             "failure_metrics": fail_metrics,
             "runtime_metrics": time_metrics,
             "model_version": self.failure_predictor.model_version,
+            "evaluation_notes": {
+                "sample_size_limitation": "Small datasets (< 100 samples) exhibit higher variance.",
+                "holdout_split_ratio": 0.20 if len(X) >= 15 else 0.0,
+            },
         }
 
         try:
-            with open(self.metadata_path, "w") as f:
+            with open(self.metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
         except OSError as e:
             logger.warning(f"Could not persist model metadata to {self.metadata_path}: {e}")
@@ -250,8 +310,8 @@ class ModelManager:
         return {
             "status": "TRAINED_AND_SAVED",
             "provenance": data_source,
-            "samples": n_samples,
-            "is_production_ready": is_production_ready,
+            "samples": len(X),
+            "is_production_ready": is_prod_ready,
             "failure_metrics": fail_metrics,
             "runtime_metrics": time_metrics,
             "artifact_paths": {
@@ -264,21 +324,86 @@ class ModelManager:
     def can_predict(self, genuine_historical_runs_count: int) -> tuple[bool, str]:
         """
         Validates whether models are authorized to produce optimization predictions.
-        Enforces Safety Rule 17: Synthetic bootstrap data alone does NOT qualify models
-        for unattended test skipping in production.
+        Enforces strict model provenance, certification, and Safety Rules 14 & 17:
+        1. Both failure and runtime predictors must be loaded in memory and trained.
+        2. Model metadata file (model_metadata.json) must exist and be valid JSON.
+        3. Metadata 'provenance' must be exactly 'GENUINE_PIPELINE_TELEMETRY'.
+        4. Metadata 'is_production_ready' must be True.
+        5. Metadata 'sample_count' and 'genuine_historical_runs_count' must be >= settings.MIN_TRAINING_RUNS.
+        6. Server-verified genuine historical runs must be >= settings.MIN_TRAINING_RUNS.
+        Synthetic bootstrap models or models with missing/malformed metadata must NEVER authorize test skipping.
         """
+        min_runs = settings.MIN_TRAINING_RUNS
+
+        # 1. Require in-memory models to be loaded and trained
         if not self.failure_predictor.is_trained or not self.runtime_predictor.is_trained:
             return (
                 False,
                 "Safety Rule 14: Predictive ML models are not trained or artifacts are missing.",
             )
 
-        if genuine_historical_runs_count < settings.MIN_TRAINING_RUNS:
+        # 2. Check metadata file exists
+        if not os.path.exists(self.metadata_path):
+            return (
+                False,
+                "Safety Rule 14: Model metadata file is missing. Untrained or unverified models cannot authorize optimization.",
+            )
+
+        # 3. Read and parse metadata
+        try:
+            with open(self.metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            return (
+                False,
+                f"Safety Rule 14: Model metadata is corrupt or unreadable ({e}). Full suite fallback enforced.",
+            )
+
+        if not isinstance(metadata, dict):
+            return (
+                False,
+                "Safety Rule 14: Model metadata is malformed. Full suite fallback enforced.",
+            )
+
+        provenance = metadata.get("provenance")
+        is_prod_ready = metadata.get("is_production_ready")
+        meta_sample_count = metadata.get("sample_count", 0)
+        meta_genuine_runs = metadata.get("genuine_historical_runs_count", 0)
+
+        # 4. Require provenance == GENUINE_PIPELINE_TELEMETRY
+        if provenance != "GENUINE_PIPELINE_TELEMETRY":
+            return (
+                False,
+                f"Safety Rule 14: Model provenance is '{provenance}', not 'GENUINE_PIPELINE_TELEMETRY'. Synthetic bootstrap models cannot authorize test skipping.",
+            )
+
+        # 5. Require is_production_ready == True
+        if is_prod_ready is not True:
+            return (
+                False,
+                "Safety Rule 14: Model is not certified production ready (is_production_ready is false). Full suite fallback enforced.",
+            )
+
+        # 6. Require metadata sample count and genuine runs >= min_runs
+        if not isinstance(meta_sample_count, (int, float)) or meta_sample_count < min_runs:
+            return (
+                False,
+                f"Safety Rule 17: Model metadata sample count ({meta_sample_count}) < minimum required ({min_runs}). Full suite fallback enforced.",
+            )
+
+        if not isinstance(meta_genuine_runs, (int, float)) or meta_genuine_runs < min_runs:
+            return (
+                False,
+                f"Safety Rule 17: Model metadata genuine historical runs ({meta_genuine_runs}) < minimum required ({min_runs}). Full suite fallback enforced.",
+            )
+
+        # 7. Require server-verified genuine historical runs in DB >= min_runs
+        if genuine_historical_runs_count < min_runs:
             return (
                 False,
                 (
                     f"Safety Rule 17: Genuine historical pipeline runs ({genuine_historical_runs_count}) "
-                    f"is less than required minimum ({settings.MIN_TRAINING_RUNS}). Full suite fallback enforced."
+                    f"is less than required minimum ({min_runs}). Full suite fallback enforced."
                 ),
             )
 

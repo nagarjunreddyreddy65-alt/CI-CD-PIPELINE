@@ -13,6 +13,7 @@ Covers:
 
 import os
 import tempfile
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -328,7 +329,7 @@ def test_synthetic_only_model_never_production_ready():
         assert res["is_production_ready"] is False
         can_pred, reason = mm.can_predict(genuine_historical_runs_count=0)
         assert can_pred is False
-        assert "Safety Rule 17" in reason
+        assert "Safety Rule 14" in reason or "Safety Rule 17" in reason
 
 
 def test_genuine_model_with_valid_provenance():
@@ -462,3 +463,299 @@ def test_runner_api_unreachable_forces_full_suite():
 
     with pytest.raises((httpx.HTTPError, RuntimeError, OSError)):
         request_plan_from_api("http://127.0.0.1:99999", {"test": "payload"})
+
+
+def test_synthetic_model_with_20_db_runs_forces_full_suite(fresh_sqlite_db):
+    """
+    Verifies that a model trained on SYNTHETIC_BOOTSTRAP data can NEVER authorize
+    test skipping, even when the database contains 20 genuine runs.
+    """
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    fresh_sqlite_db.add(repo)
+    fresh_sqlite_db.flush()
+
+    for i in range(20):
+        commit = Commit(
+            repository_id=repo.id,
+            commit_hash=f"synth-test-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@ci.local",
+            message=f"Commit {i}",
+        )
+        fresh_sqlite_db.add(commit)
+        fresh_sqlite_db.flush()
+        run = PipelineRun(
+            repository_id=repo.id,
+            commit_id=commit.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=16.0,
+        )
+        fresh_sqlite_db.add(run)
+    fresh_sqlite_db.commit()
+
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        # Train strictly synthetic model
+        mm.train_and_persist(n_samples=25, data_source="SYNTHETIC_BOOTSTRAP")
+
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=20)
+        assert can_pred is False
+        assert "Safety Rule 14" in reason
+        assert "SYNTHETIC_BOOTSTRAP" in reason
+
+        engine = DecisionEngine(root_dir=".", model_manager=mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+        plan = engine.generate_plan(changed_file_entries=changes, db=fresh_sqlite_db)
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.is_optimized is False
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_missing_metadata_forces_full_suite(fresh_sqlite_db):
+    """Verifies that missing model_metadata.json forces FULL_SUITE fallback."""
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mm.train_and_persist(
+            n_samples=25,
+            data_source="GENUINE_PIPELINE_TELEMETRY",
+            genuine_historical_runs_count=25,
+            training_data=(X, y_fail, y_time),
+        )
+        # Delete metadata file
+        if os.path.exists(mm.metadata_path):
+            os.remove(mm.metadata_path)
+
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=20)
+        assert can_pred is False
+        assert "Safety Rule 14" in reason
+
+        engine = DecisionEngine(root_dir=".", model_manager=mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+        plan = engine.generate_plan(
+            changed_file_entries=changes, db=fresh_sqlite_db, historical_runs_count=20
+        )
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_corrupted_metadata_forces_full_suite(fresh_sqlite_db):
+    """Verifies that corrupted model_metadata.json forces FULL_SUITE fallback."""
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mm.train_and_persist(
+            n_samples=25,
+            data_source="GENUINE_PIPELINE_TELEMETRY",
+            genuine_historical_runs_count=25,
+            training_data=(X, y_fail, y_time),
+        )
+        # Overwrite with invalid JSON
+        with open(mm.metadata_path, "w", encoding="utf-8") as f:
+            f.write("{invalid_json: true, unterminated")
+
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=20)
+        assert can_pred is False
+        assert "Safety Rule 14" in reason
+
+        engine = DecisionEngine(root_dir=".", model_manager=mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+        plan = engine.generate_plan(
+            changed_file_entries=changes, db=fresh_sqlite_db, historical_runs_count=20
+        )
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_mismatched_model_and_metadata_provenance(fresh_sqlite_db):
+    """
+    Verifies that when metadata claims genuine telemetry but model files are untrained/missing,
+    optimization is rejected with FULL_SUITE.
+    """
+    import json
+
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        # Create metadata claiming production ready without trained models
+        metadata = {
+            "provenance": "GENUINE_PIPELINE_TELEMETRY",
+            "sample_count": 50,
+            "genuine_historical_runs_count": 50,
+            "is_production_ready": True,
+        }
+        with open(mm.metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f)
+
+        # In-memory models are untrained
+        assert mm.failure_predictor.is_trained is False
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=20)
+        assert can_pred is False
+        assert "Safety Rule 14" in reason
+
+        engine = DecisionEngine(root_dir=".", model_manager=mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+        plan = engine.generate_plan(
+            changed_file_entries=changes, db=fresh_sqlite_db, historical_runs_count=20
+        )
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.fallback_triggered is True
+
+
+def test_no_post_execution_feature_leakage_in_training_matrix():
+    """
+    Verifies that extract_features_from_db_runs NEVER leaks post-execution fields
+    (e.g., fallback_triggered, current run's total_duration_sec) into the pre-execution input matrix.
+    """
+
+    class MockFile:
+        def __init__(self, path: str, added: int, deleted: int, is_sens: bool = False):
+            self.file_path = path
+            self.lines_added = added
+            self.lines_deleted = deleted
+            self.is_sensitive = is_sens
+
+    class MockCommit:
+        def __init__(self, changed_files: list):
+            self.changed_files = changed_files
+
+    class MockRun:
+        def __init__(
+            self,
+            status: str,
+            duration: float,
+            fallback_triggered: bool,
+            created_at: datetime,
+            files: list,
+        ):
+            self.status = status
+            self.total_duration_sec = duration
+            self.fallback_triggered = fallback_triggered
+            self.created_at = created_at
+            self.commit = MockCommit(files)
+            self.execution_plan = None
+            self.predictions = []
+
+    files = [MockFile("sample_app/utils/math_ops.py", 5, 2, False)]
+
+    # Run 0: 10.0s, fallback=True
+    run0 = MockRun("SUCCESS", 10.0, True, datetime(2026, 1, 1, 10, 0, tzinfo=UTC), files)
+    # Run 1: 80.0s, fallback=True (failed)
+    run1 = MockRun("FAILED", 80.0, True, datetime(2026, 1, 1, 11, 0, tzinfo=UTC), files)
+    # Run 2: 30.0s, fallback=False
+    run2 = MockRun("SUCCESS", 30.0, False, datetime(2026, 1, 1, 12, 0, tzinfo=UTC), files)
+
+    mm = ModelManager()
+    X, y_fail, y_time = mm.extract_features_from_db_runs([run0, run1, run2])
+
+    assert len(X) == 3
+
+    # Feature 6 (is_sensitive): Must be 0 because math_ops.py is non-sensitive!
+    # Even though run0 and run1 had fallback_triggered=True, post-execution fallback must NOT contaminate is_sensitive!
+    assert X[0][6] == 0.0, "Post-execution fallback_triggered must not contaminate is_sensitive"
+    assert X[1][6] == 0.0, "Post-execution fallback_triggered must not contaminate is_sensitive"
+
+    # Feature 9 (previous_execution_duration):
+    # Run 0: No prior runs -> baseline default 25.0, NOT its own 10.0!
+    assert X[0][9] == 25.0, f"Expected 25.0 baseline for run 0, got {X[0][9]}"
+    # Run 1: Prior run was run0 (10.0s) -> MUST be 10.0, NOT its own 80.0!
+    assert X[1][9] == 10.0, f"Expected 10.0 prior duration for run 1, got {X[1][9]}"
+    # Run 2: Prior run was run1 (80.0s) -> MUST be 80.0, NOT its own 30.0!
+    assert X[2][9] == 80.0, f"Expected 80.0 prior duration for run 2, got {X[2][9]}"
+
+    # Targets must match completed outcomes
+    assert y_fail.tolist() == [0, 1, 0]
+    assert y_time.tolist() == [10.0, 80.0, 30.0]
+
+
+def test_missing_historical_feature_values_forces_full_suite(fresh_sqlite_db):
+    """
+    Verifies that when reliable historical features are absent (0 runs in DB),
+    DecisionEngine forces FULL_SUITE even if client passes spoofed metrics.
+    """
+    engine = DecisionEngine(root_dir=".")
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 0,
+        }
+    ]
+
+    # Caller attempts to supply spoofed failure rate and run count
+    plan = engine.generate_plan(
+        changed_file_entries=changes,
+        db=fresh_sqlite_db,
+        historical_runs_count=50,
+        historical_failure_rate=0.001,
+        previous_execution_duration=12.0,
+    )
+
+    assert plan.decision == ExecutionDecision.FULL_SUITE
+    assert plan.fallback_triggered is True
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" in plan.triggered_safety_rules
+
+
+def test_database_query_failure_during_historical_fetch_forces_full_suite():
+    """
+    Verifies that if querying the database for historical runs raises an exception,
+    DecisionEngine safely catches it, treats historical runs as 0, and forces FULL_SUITE.
+    """
+    mock_db = MagicMock()
+    mock_db.query.side_effect = SQLAlchemyError("Database connection lost during query")
+
+    engine = DecisionEngine(root_dir=".")
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 0,
+        }
+    ]
+
+    plan = engine.generate_plan(changed_file_entries=changes, db=mock_db)
+
+    assert plan.decision == ExecutionDecision.FULL_SUITE
+    assert plan.is_optimized is False
+    assert plan.fallback_triggered is True
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" in plan.triggered_safety_rules

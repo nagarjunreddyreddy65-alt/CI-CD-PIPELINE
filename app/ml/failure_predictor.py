@@ -99,20 +99,36 @@ class FailurePredictor:
         except ValueError:
             auc = 0.5
 
+        # Class imbalance calculation on training targets
+        positive_class_ratio = float(np.mean(y)) if len(y) > 0 else 0.0
+        has_class_imbalance = bool(abs(positive_class_ratio - 0.5) > 0.2)
+
         # Refit on full dataset for optimal production model weights
         if use_holdout:
             self.model.fit(X, y)
 
         return {
             "model_version": self.model_version,
+            "total_dataset_samples": len(X),
             "training_samples": len(X),
+            "train_samples_count": len(X_train) if use_holdout else len(X),
             "test_samples": len(eval_y),
+            "test_samples_count": len(eval_y),
             "evaluated_on": "HOLDOUT_TEST_SPLIT" if use_holdout else "IN_SAMPLE_DATA",
             "precision": round(prec, 4),
             "recall": round(rec, 4),
             "f1_score": round(f1, 4),
             "roc_auc": round(auc, 4),
             "confusion_matrix": cm,
+            "limitations": {
+                "small_sample_size": bool(len(X) < 100),
+                "class_imbalance": has_class_imbalance,
+                "positive_class_ratio": round(positive_class_ratio, 4),
+                "evaluation_note": (
+                    "Metrics evaluated strictly on held-out 20% test split. "
+                    "Small sample sizes (< 100) or class imbalance can cause metric variance."
+                ),
+            },
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

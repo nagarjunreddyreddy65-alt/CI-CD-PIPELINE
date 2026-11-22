@@ -18,8 +18,8 @@ The repository maintains an automated regression and verification suite:
 | Test Suite | Location | Tests Count | Scope | Pass Rate |
 | :--- | :--- | :---: | :--- | :---: |
 | **Sample Target Application** | `tests_sample_app/` | 24 | Unit & regression tests covering `math_ops`, `string_ops`, `metrics_calculator`, `user_service`, `security_service` (Auth), and `payment_processor` (Billing). | **100% (24/24)** |
-| **Autonomous DevOps Core** | `tests/` | 154 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 20 P0/P1 adversarial remediation scenarios, 15 end-to-end scenario evaluations, controlled defect injection, API authentication (constant-time token verification on write & operational read endpoints), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (154/154)** |
-| **Total Automated Test Suite** | Combined | **178** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (178/178)** |
+| **Autonomous DevOps Core** | `tests/` | 161 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 22 P0/P1 adversarial remediation scenarios, 15 end-to-end scenario evaluations, controlled defect injection, API authentication (constant-time token verification on write & operational read endpoints), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (161/161)** |
+| **Total Automated Test Suite** | Combined | **185** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (185/185)** |
 
 ### Execution Command:
 ```bash
@@ -122,8 +122,8 @@ The platform maintains strict provenance separation between early synthetic boot
 
 | Security Scanner | Tool Version | Target Scope | Rules / Checks | Findings | Status |
 | :--- | :--- | :--- | :--- | :---: | :---: |
-| **Ruff Linter** | 0.17.6 | Entire repository (92 files) | Pyflakes, Pycodestyle, Flake8-Bugbear, Pyupgrade, Import sorting | **0 violations** | **PASSED** |
-| **Ruff Formatter** | 0.17.6 | Entire repository (92 files) | PEP 8 line length (100), whitespace | **92 formatted** | **PASSED** |
+| **Ruff Linter** | 0.17.6 | Entire repository (93 files) | Pyflakes, Pycodestyle, Flake8-Bugbear, Pyupgrade, Import sorting | **0 violations** | **PASSED** |
+| **Ruff Formatter** | 0.17.6 | Entire repository (93 files) | PEP 8 line length (100), whitespace | **93 formatted** | **PASSED** |
 | **Bandit (SAST)** | 1.9.4 | `app/` and `sample_app/` (4,633 LOC) | Injection, hardcoded secrets, weak crypto, unsafe binds | **0 issues** | **PASSED** |
 | **pip-audit (SCA)** | 2.10.1 | `requirements.txt` | PyPI Advisory Database vulnerability audit | **0 vulnerabilities** | **PASSED** |
 | **Gitleaks** | CI Action | Git commit history | Pre-commit/CI secret leak detection | **Configured & Enforced** | **PASSED** |

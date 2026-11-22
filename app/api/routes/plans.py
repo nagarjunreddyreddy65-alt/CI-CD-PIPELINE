@@ -66,8 +66,8 @@ class PlanGenerationRequest(BaseModel):
         json_schema_extra={"example": "Update math ops"},
     )
     changed_files: list[ChangedFileItem] = Field(..., max_length=1000)
-    historical_failure_rate: float = Field(0.05, ge=0.0, le=1.0)
-    previous_execution_duration: float = Field(25.0, ge=0.0)
+    historical_failure_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    previous_execution_duration: float | None = Field(default=None, ge=0.0)
     historical_runs_count: int | None = Field(default=None, ge=0)
     risk_threshold: float = Field(0.50, ge=0.0, le=1.0)
 

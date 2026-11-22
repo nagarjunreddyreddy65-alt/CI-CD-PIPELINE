@@ -182,8 +182,6 @@ def main():
             "author_email": commit_meta["author_email"],
             "commit_message": commit_meta["commit_message"],
             "changed_files": changed_files,
-            "historical_failure_rate": 0.05,
-            "previous_execution_duration": 25.0,
             "risk_threshold": 0.50,
         }
 

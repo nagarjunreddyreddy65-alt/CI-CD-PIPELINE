@@ -69,14 +69,27 @@ def test_provenance_and_can_predict_rule_17(temp_manager):
     # With 0 genuine historical runs: cannot predict
     can_pred, reason = temp_manager.can_predict(genuine_historical_runs_count=0)
     assert can_pred is False
-    assert "Safety Rule 17" in reason
+    assert "Safety Rule 14" in reason or "Safety Rule 17" in reason
 
     # With 10 genuine historical runs (< 15): cannot predict
     can_pred, reason = temp_manager.can_predict(genuine_historical_runs_count=10)
     assert can_pred is False
-    assert "Safety Rule 17" in reason
 
-    # With 15 genuine historical runs: authorized to predict
+    # With 15 genuine historical runs: synthetic model STILL cannot predict (Safety Rule 14 provenance rejection)
+    can_pred, reason = temp_manager.can_predict(genuine_historical_runs_count=15)
+    assert can_pred is False
+    assert "Safety Rule 14" in reason
+    assert "SYNTHETIC_BOOTSTRAP" in reason
+
+    # When retrained with genuine pipeline telemetry and certified production ready:
+    X, y_fail, y_time = temp_manager.generate_synthetic_historical_data(30)
+    temp_manager.train_and_persist(
+        n_samples=30,
+        data_source="GENUINE_PIPELINE_TELEMETRY",
+        genuine_historical_runs_count=15,
+        training_data=(X, y_fail, y_time),
+        is_production_ready=True,
+    )
     can_pred, reason = temp_manager.can_predict(genuine_historical_runs_count=15)
     assert can_pred is True
     assert "ready" in reason.lower()
