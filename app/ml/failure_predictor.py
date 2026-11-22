@@ -94,10 +94,14 @@ class FailurePredictor:
         f1 = float(f1_score(eval_y, y_pred, zero_division=0))
         cm = confusion_matrix(eval_y, y_pred).tolist()
 
-        try:
-            auc = float(roc_auc_score(eval_y, y_prob)) if len(np.unique(eval_y)) > 1 else 1.0
-        except ValueError:
-            auc = 0.5
+        if len(np.unique(eval_y)) > 1:
+            try:
+                auc: float | None = float(roc_auc_score(eval_y, y_prob))
+            except ValueError:
+                auc = None
+        else:
+            # Undefined when test set contains only a single class
+            auc = None
 
         # Class imbalance calculation on training targets
         positive_class_ratio = float(np.mean(y)) if len(y) > 0 else 0.0
@@ -110,16 +114,26 @@ class FailurePredictor:
         return {
             "model_version": self.model_version,
             "total_dataset_samples": len(X),
-            "training_samples": len(X),
-            "train_samples_count": len(X_train) if use_holdout else len(X),
+            "training_samples": len(X_train) if use_holdout else len(X),
             "test_samples": len(eval_y),
-            "test_samples_count": len(eval_y),
             "evaluated_on": "HOLDOUT_TEST_SPLIT" if use_holdout else "IN_SAMPLE_DATA",
             "precision": round(prec, 4),
             "recall": round(rec, 4),
             "f1_score": round(f1, 4),
-            "roc_auc": round(auc, 4),
+            "roc_auc": round(auc, 4) if auc is not None else None,
             "confusion_matrix": cm,
+            "class_distribution": {
+                "dataset_pass_count": int(np.sum(y == 0)),
+                "dataset_fail_count": int(np.sum(y == 1)),
+                "train_pass_count": int(np.sum(y_train == 0))
+                if use_holdout
+                else int(np.sum(y == 0)),
+                "train_fail_count": int(np.sum(y_train == 1))
+                if use_holdout
+                else int(np.sum(y == 1)),
+                "test_pass_count": int(np.sum(eval_y == 0)),
+                "test_fail_count": int(np.sum(eval_y == 1)),
+            },
             "limitations": {
                 "small_sample_size": bool(len(X) < 100),
                 "class_imbalance": has_class_imbalance,

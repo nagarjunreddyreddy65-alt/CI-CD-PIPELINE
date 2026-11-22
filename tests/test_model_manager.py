@@ -89,6 +89,7 @@ def test_provenance_and_can_predict_rule_17(temp_manager):
         genuine_historical_runs_count=15,
         training_data=(X, y_fail, y_time),
         is_production_ready=True,
+        verified_db_source=True,
     )
     can_pred, reason = temp_manager.can_predict(genuine_historical_runs_count=15)
     assert can_pred is True

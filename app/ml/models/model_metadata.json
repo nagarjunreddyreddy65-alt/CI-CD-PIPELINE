@@ -3,7 +3,11 @@
   "sample_count": 50,
   "genuine_historical_runs_count": 50,
   "is_production_ready": true,
-  "trained_at": "2026-11-22T10:01:33.582098+00:00",
+  "trained_at": "2026-11-22T10:33:55.986426+00:00",
+  "artifact_hashes": {
+    "failure_predictor_sha256": "4ca7ce50ea231157a05952f12a60b948044a42c52485e8bd69fc0845cc876951",
+    "runtime_predictor_sha256": "a18f52443b2360f5f116a117ac6f6310e5fcf6d7f7ecfc5d1327381f0b73a18b"
+  },
   "failure_metrics": {
     "model_version": "v1.0.0",
     "total_dataset_samples": 50,
@@ -24,13 +28,21 @@
         0
       ]
     ],
+    "class_distribution": {
+      "dataset_pass_count": 40,
+      "dataset_fail_count": 10,
+      "train_pass_count": 32,
+      "train_fail_count": 8,
+      "test_pass_count": 8,
+      "test_fail_count": 2
+    },
     "limitations": {
       "small_sample_size": true,
       "class_imbalance": true,
       "positive_class_ratio": 0.2,
       "evaluation_note": "Metrics evaluated strictly on held-out 20% test split. Small sample sizes (< 100) or class imbalance can cause metric variance."
     },
-    "timestamp": "2026-11-22T10:01:33.403817+00:00"
+    "timestamp": "2026-11-22T10:33:55.706242+00:00"
   },
   "runtime_metrics": {
     "model_version": "v1.0.0",
@@ -45,7 +57,7 @@
       "small_sample_size": true,
       "evaluation_note": "Metrics evaluated strictly on held-out 20% test split. Small sample sizes (< 100) have higher estimation variance."
     },
-    "timestamp": "2026-11-22T10:01:33.545544+00:00"
+    "timestamp": "2026-11-22T10:33:55.894475+00:00"
   },
   "model_version": "v1.0.0",
   "evaluation_notes": {

@@ -113,10 +113,12 @@ def train_models(
                 )
             X, y_fail, y_time = model_manager.extract_features_from_db_runs(runs)
             result = model_manager.train_and_persist(
-                n_samples=genuine_count,
+                n_samples=len(X),
                 data_source="GENUINE_PIPELINE_TELEMETRY",
                 genuine_historical_runs_count=genuine_count,
                 training_data=(X, y_fail, y_time),
+                verified_db_source=True,
+                is_production_ready=True,
             )
         else:
             result = model_manager.train_and_persist(

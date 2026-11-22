@@ -14,15 +14,17 @@
 The final engineering stabilization and machine learning integrity phase for **Autonomous DevOps** has been executed. All critical defects across model loading, provenance gating, data leakage, caller spoofing, database resilience, and route security have been resolved, thoroughly tested, and validated.
 
 ### Key Stabilization Milestones:
-1. **Model Provenance Enforcement (P0):** `ModelManager.can_predict()` validates `model_metadata.json` on disk. It requires `provenance == "GENUINE_PIPELINE_TELEMETRY"`, `is_production_ready == True`, and `sample_count >= 15`. Synthetic bootstrap models are strictly barred from authorizing test optimization, even when the database independently accumulates $\ge 15$ runs.
-2. **Elimination of Training Data Leakage (P1):** `extract_features_from_db_runs()` was completely audited:
+1. **Model Provenance Enforcement & SHA-256 Integrity (P0):** `ModelManager.can_predict()` validates `model_metadata.json` on disk and checks cryptographic SHA-256 digests (`artifact_hashes`) of both `failure_predictor.joblib` and `runtime_predictor.joblib`. Models require explicit production certification (`is_production_ready == True`), verified database telemetry source (`verified_db_source=True`), and $\ge 15$ genuine completed runs. Synthetic bootstrap models and mismatched artifacts are strictly barred from authorizing test optimization.
+2. **Elimination of Training Data Leakage & Fabricated Defaults (P1):** `extract_features_from_db_runs()` was completely audited:
+   - Fabricated defaults (e.g., 0.05 failure rate and 25.0s duration) were removed from genuine training records.
+   - Initial runs lacking antecedent history ($i=0$) are excluded from training rather than inventing defaults.
    - Post-execution `fallback_triggered` is never used to populate pre-execution `is_sensitive`.
    - The current run's `total_duration_sec` is never leaked as its own `previous_execution_duration`.
    - Preceding runtime durations and historical failure rates are computed strictly from chronologically prior runs.
-3. **Elimination of Caller-Supplied Historical Metrics (P1):** `PlanGenerationRequest` and `scripts/run_optimized_ci.py` no longer trust caller-supplied historical failure rates or run counts. The server calculates failure rates and previous durations directly from genuine completed database records (`PipelineRun.status.in_(["SUCCESS", "FAILED"])`).
-4. **Honest Model Evaluation & Limitations:** Out-of-sample 20% holdout test splits report actual training vs. test sample counts (`total_dataset_samples`, `training_samples`, `test_samples`), and explicitly document small-sample variance ($< 100$ samples) and class imbalance limitations.
+3. **Elimination of Caller-Supplied Historical Metrics (P1):** `PlanGenerationRequest` completely removed `historical_failure_rate`, `previous_execution_duration`, and `historical_runs_count`. The server calculates historical metrics strictly from server-side database records. On DB query failure or missing historical features, the engine forces `FULL_SUITE` without invoking ML on invented inputs.
+4. **Honest Model Evaluation & Limitations:** Out-of-sample 20% holdout test splits report actual training vs. test sample counts (`total_dataset_samples`, `training_samples`, `test_samples`), class distribution, report ROC-AUC as undefined (`None`) when test splits have only one class (never falsified to 1.0 or 0.5), do not clamp negative $R^2$ values, and explicitly document small-sample variance ($< 100$ samples).
 5. **Database Reliability & Fail-Closed Fallback (P0):** `DecisionEngine` intercepts database persistence errors during plan generation, rolls back transactions, and forces a `FULL_SUITE` fallback (Safety Rule 21). In production (`ENVIRONMENT=production`), database connection failures during startup fail fast.
-6. **Multi-Matrix CI/CD Green:** The complete verification matrix passes across Python 3.11 and Python 3.12 runners.
+6. **Multi-Matrix CI/CD Green:** The complete verification matrix passes 192/192 tests across Python 3.11, Python 3.12, and Python 3.14.
 
 ---
 
@@ -157,8 +159,8 @@ $$X = [f_{\text{files\_changed}}, f_{\text{lines\_added}}, f_{\text{lines\_delet
 ## 6. Comprehensive Automated Test Suite Verification
 
 ```text
-======================= 186 passed in 19.45s =======================
-Pass Rate: 100.0% (186 / 186)
+======================= 192 passed in 32.41s =======================
+Pass Rate: 100.0% (192 / 192)
 ```
 
 ### Breakdown of Test Modules:
@@ -169,8 +171,8 @@ Pass Rate: 100.0% (186 / 186)
   - `test_security_service.py` (5)
   - `test_string_ops.py` (3)
   - `test_user_service.py` (4)
-- `tests/` (162 tests):
-  - `test_remediation_p0_p1.py` (22 tests covering model loading, provenance gating, synthetic model rejection, metadata corruption, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
+- `tests/` (168 tests):
+  - `test_remediation_p0_p1.py` (26 tests covering model loading, provenance gating, synthetic model rejection, metadata corruption, SHA-256 integrity verification, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
   - `test_safety_policy.py` (25 tests covering all 21 fallback rules)
   - `test_scenarios_e2e.py` (16 end-to-end scenarios)
   - `test_api_authentication.py` (5 tests)
@@ -179,7 +181,7 @@ Pass Rate: 100.0% (186 / 186)
   - `test_predictions_api.py` (5 tests)
   - `test_health.py` (4 tests)
   - `test_dashboard_routes.py` (9 tests)
-  - `test_ml_models.py` (4 tests)
+  - `test_ml_models.py` (6 tests: including single-class ROC-AUC reporting as None and unclipped R2)
   - `test_model_manager.py` (4 tests)
   - `test_feature_extractor.py` (4 tests)
   - `test_change_analyzer.py` (10 tests)

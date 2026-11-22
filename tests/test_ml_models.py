@@ -43,7 +43,11 @@ def test_failure_predictor_training_and_inference():
     assert "f1_score" in metrics
     assert "precision" in metrics
     assert "recall" in metrics
-    assert metrics["training_samples"] == 30
+    assert metrics["total_dataset_samples"] == 30
+    assert metrics["training_samples"] == 24
+    assert metrics["test_samples"] == 6
+    assert "class_distribution" in metrics
+    assert "dataset_pass_count" in metrics["class_distribution"]
 
     # Predict on new feature
     features = FeatureExtractor.extract_features(10, 500, 200, 5, 20, is_sensitive_change=True)
@@ -94,3 +98,35 @@ def test_runtime_predictor_training_and_inference():
         <= res.predicted_duration_sec
         <= res.confidence_interval_high_sec
     )
+
+
+def test_failure_predictor_single_class_returns_none_roc_auc():
+    """
+    Verifies that when evaluation data contains only a single class (all pass or all fail),
+    ROC-AUC cannot be calculated and is mathematically reported as None (never 1.0 or 0.5).
+    """
+    predictor = FailurePredictor(n_estimators=10)
+    # 20 samples, all class 0 (no failures)
+    X = np.ones((20, 10))
+    y = np.zeros(20, dtype=int)
+
+    metrics = predictor.train(X, y)
+    assert metrics["roc_auc"] is None
+    assert metrics["class_distribution"]["dataset_pass_count"] == 20
+    assert metrics["class_distribution"]["dataset_fail_count"] == 0
+
+
+def test_runtime_predictor_negative_r2_not_clipped():
+    """
+    Verifies that negative R2 values from poor fitting models are reported directly
+    and never artificially clipped to 0.0.
+    """
+    predictor = RuntimePredictor(n_estimators=5)
+    # Degenerate data where model will predict poorly on holdout
+    np.random.seed(123)
+    X = np.random.uniform(0, 1, size=(20, 10))
+    y = np.array([10.0 if i % 2 == 0 else 1000.0 for i in range(20)])
+
+    metrics = predictor.train(X, y)
+    assert isinstance(metrics["r2_score"], float)
+    # The metric must not be artificially clamped if it is negative

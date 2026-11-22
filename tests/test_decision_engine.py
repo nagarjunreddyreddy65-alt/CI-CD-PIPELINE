@@ -36,6 +36,7 @@ def trained_model_manager(tmp_path):
         genuine_historical_runs_count=40,
         training_data=(X, y_fail, y_time),
         is_production_ready=True,
+        verified_db_source=True,
     )
     return manager
 

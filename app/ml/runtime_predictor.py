@@ -70,7 +70,7 @@ class RuntimePredictor:
         y_pred = self.model.predict(eval_X)
         mae = float(mean_absolute_error(eval_y, y_pred))
         rmse = float(root_mean_squared_error(eval_y, y_pred))
-        r2 = float(r2_score(eval_y, y_pred)) if len(np.unique(eval_y)) > 1 else 1.0
+        r2 = float(r2_score(eval_y, y_pred)) if len(eval_y) > 1 else 1.0
 
         if use_holdout:
             self.model.fit(X, y)
@@ -83,7 +83,7 @@ class RuntimePredictor:
             "evaluated_on": "HOLDOUT_TEST_SPLIT" if use_holdout else "IN_SAMPLE_DATA",
             "mae": round(mae, 4),
             "rmse": round(rmse, 4),
-            "r2_score": round(max(0.0, r2), 4),
+            "r2_score": round(r2, 4),
             "limitations": {
                 "small_sample_size": bool(len(X) < 100),
                 "evaluation_note": (

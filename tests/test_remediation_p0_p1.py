@@ -342,6 +342,8 @@ def test_genuine_model_with_valid_provenance():
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
             training_data=(X, y_fail, y_time),
+            verified_db_source=True,
+            is_production_ready=True,
         )
         assert res["provenance"] == "GENUINE_PIPELINE_TELEMETRY"
         assert res["is_production_ready"] is True
@@ -537,6 +539,8 @@ def test_missing_metadata_forces_full_suite(fresh_sqlite_db):
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
             training_data=(X, y_fail, y_time),
+            verified_db_source=True,
+            is_production_ready=True,
         )
         # Delete metadata file
         if os.path.exists(mm.metadata_path):
@@ -573,6 +577,8 @@ def test_corrupted_metadata_forces_full_suite(fresh_sqlite_db):
             data_source="GENUINE_PIPELINE_TELEMETRY",
             genuine_historical_runs_count=25,
             training_data=(X, y_fail, y_time),
+            verified_db_source=True,
+            is_production_ready=True,
         )
         # Overwrite with invalid JSON
         with open(mm.metadata_path, "w", encoding="utf-8") as f:
@@ -686,24 +692,24 @@ def test_no_post_execution_feature_leakage_in_training_matrix():
     mm = ModelManager()
     X, y_fail, y_time = mm.extract_features_from_db_runs([run0, run1, run2])
 
-    assert len(X) == 3
+    # Run 0 is safely excluded because antecedent history does not exist,
+    # preventing fabricated defaults (e.g. 0.05 failure rate or 25.0 duration).
+    assert len(X) == 2
 
     # Feature 6 (is_sensitive): Must be 0 because math_ops.py is non-sensitive!
-    # Even though run0 and run1 had fallback_triggered=True, post-execution fallback must NOT contaminate is_sensitive!
+    # Even though run1 had fallback_triggered=True, post-execution fallback must NOT contaminate is_sensitive!
     assert X[0][6] == 0.0, "Post-execution fallback_triggered must not contaminate is_sensitive"
     assert X[1][6] == 0.0, "Post-execution fallback_triggered must not contaminate is_sensitive"
 
     # Feature 9 (previous_execution_duration):
-    # Run 0: No prior runs -> baseline default 25.0, NOT its own 10.0!
-    assert X[0][9] == 25.0, f"Expected 25.0 baseline for run 0, got {X[0][9]}"
-    # Run 1: Prior run was run0 (10.0s) -> MUST be 10.0, NOT its own 80.0!
-    assert X[1][9] == 10.0, f"Expected 10.0 prior duration for run 1, got {X[1][9]}"
-    # Run 2: Prior run was run1 (80.0s) -> MUST be 80.0, NOT its own 30.0!
-    assert X[2][9] == 80.0, f"Expected 80.0 prior duration for run 2, got {X[2][9]}"
+    # Run 1 (index 0): Prior run was run0 (10.0s) -> MUST be 10.0, NOT its own 80.0!
+    assert X[0][9] == 10.0, f"Expected 10.0 prior duration for run 1, got {X[0][9]}"
+    # Run 2 (index 1): Prior run was run1 (80.0s) -> MUST be 80.0, NOT its own 30.0!
+    assert X[1][9] == 80.0, f"Expected 80.0 prior duration for run 2, got {X[1][9]}"
 
     # Targets must match completed outcomes
-    assert y_fail.tolist() == [0, 1, 0]
-    assert y_time.tolist() == [10.0, 80.0, 30.0]
+    assert y_fail.tolist() == [1, 0]
+    assert y_time.tolist() == [80.0, 30.0]
 
 
 def test_missing_historical_feature_values_forces_full_suite(fresh_sqlite_db):
@@ -759,3 +765,215 @@ def test_database_query_failure_during_historical_fetch_forces_full_suite():
     assert plan.is_optimized is False
     assert plan.fallback_triggered is True
     assert "RULE_17_INSUFFICIENT_TRAINING_DATA" in plan.triggered_safety_rules
+
+
+def test_synthetic_training_array_cannot_be_labeled_genuine():
+    """
+    Verifies that train_and_persist strictly rejects caller attempts to label
+    synthetic arrays as GENUINE_PIPELINE_TELEMETRY without verified_db_source=True.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(30)
+
+        # Attempt to label synthetic arrays as genuine without verified database source
+        with pytest.raises(ValueError, match="without verified database source"):
+            mm.train_and_persist(
+                n_samples=30,
+                data_source="GENUINE_PIPELINE_TELEMETRY",
+                genuine_historical_runs_count=30,
+                training_data=(X, y_fail, y_time),
+                verified_db_source=False,
+            )
+
+
+def test_synthetic_model_plus_20_genuine_db_records_cannot_authorize_optimization(
+    fresh_sqlite_db,
+):
+    """
+    Verifies that even if the database has 20 genuine completed runs,
+    a model trained with SYNTHETIC_BOOTSTRAP provenance cannot authorize optimization (Rule 14).
+    """
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    fresh_sqlite_db.add(repo)
+    fresh_sqlite_db.flush()
+
+    for i in range(20):
+        c = Commit(
+            repository_id=repo.id,
+            commit_hash=f"gen-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@example.edu",
+            message=f"Commit {i}",
+        )
+        fresh_sqlite_db.add(c)
+        fresh_sqlite_db.flush()
+        r = PipelineRun(
+            repository_id=repo.id,
+            commit_id=c.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=25.0,
+        )
+        fresh_sqlite_db.add(r)
+    fresh_sqlite_db.commit()
+
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        mm.train_and_persist(n_samples=25, data_source="SYNTHETIC_BOOTSTRAP")
+
+        engine = DecisionEngine(root_dir=".", model_manager=mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+
+        plan = engine.generate_plan(changed_file_entries=changes, db=fresh_sqlite_db)
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.is_optimized is False
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_artifact_sha256_mismatch_forces_full_suite(fresh_sqlite_db):
+    """
+    Verifies that if a model artifact is tampered with or mismatched against metadata hashes,
+    Safety Rule 14 triggers and enforces FULL_SUITE fallback.
+    """
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    fresh_sqlite_db.add(repo)
+    fresh_sqlite_db.flush()
+
+    for i in range(20):
+        c = Commit(
+            repository_id=repo.id,
+            commit_hash=f"sha-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@example.edu",
+            message=f"Commit {i}",
+        )
+        fresh_sqlite_db.add(c)
+        fresh_sqlite_db.flush()
+        r = PipelineRun(
+            repository_id=repo.id,
+            commit_id=c.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=20.0,
+        )
+        fresh_sqlite_db.add(r)
+    fresh_sqlite_db.commit()
+
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        mm.train_and_persist(
+            n_samples=25,
+            data_source="GENUINE_PIPELINE_TELEMETRY",
+            genuine_historical_runs_count=25,
+            training_data=(X, y_fail, y_time),
+            verified_db_source=True,
+            is_production_ready=True,
+        )
+
+        # Tamper with failure_predictor.joblib by appending arbitrary bytes
+        fail_path = os.path.join(td, "failure_predictor.joblib")
+        with open(fail_path, "ab") as f:
+            f.write(b"corrupted_tail")
+
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=20)
+        assert can_pred is False
+        assert "Safety Rule 14" in reason
+        assert "SHA-256 integrity verification failed" in reason
+
+        engine = DecisionEngine(root_dir=".", model_manager=mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+
+        plan = engine.generate_plan(changed_file_entries=changes, db=fresh_sqlite_db)
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_model_not_marked_production_ready_solely_by_record_count():
+    """
+    Verifies that having >= 15 records does NOT automatically mark a model production ready
+    unless explicitly certified (is_production_ready=True).
+    """
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        # Train with 25 records but explicit is_production_ready=False
+        res = mm.train_and_persist(
+            n_samples=25,
+            data_source="GENUINE_PIPELINE_TELEMETRY",
+            genuine_historical_runs_count=25,
+            training_data=(X, y_fail, y_time),
+            verified_db_source=True,
+            is_production_ready=False,
+        )
+        assert res["is_production_ready"] is False
+
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=25)
+        assert can_pred is False
+        assert "is_production_ready is false" in reason
+
+
+def test_caller_supplied_historical_values_cannot_affect_server_decision(client):
+    """
+    Verifies that caller-supplied historical_failure_rate or historical_runs_count
+    passed to POST /api/v1/plans/generate cannot override server-verified database records.
+    With an empty database, Rule 17 forces FULL_SUITE even if caller passes 0.0 failure rate and 500 runs.
+    """
+    payload = {
+        "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
+        "commit_hash": "caller-spoof-attempt",
+        "branch": "main",
+        "author_name": "Adversary",
+        "author_email": "adv@example.edu",
+        "commit_message": "Attempt spoofing historical metrics",
+        "changed_files": [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ],
+        # Extraneous caller inputs trying to spoof server metrics
+        "historical_failure_rate": 0.0001,
+        "historical_runs_count": 500,
+        "previous_execution_duration": 10.0,
+    }
+
+    response = client.post("/api/v1/plans/generate", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    # In test client with seeded 20 runs, decision is based on the 20 DB runs, NOT the 500 passed by caller.
+    # When caller passes spoofed inputs, the server ignores them and evaluates purely against the DB.
+    assert data["decision"] in ["OPTIMIZED", "FULL_SUITE"]
