@@ -18,9 +18,19 @@ Base = declarative_base()
 def get_engine():
     """
     Creates an engine connected to PostgreSQL. If PostgreSQL is unreachable
-    and SQLITE_FALLBACK_URL is enabled, falls back to a local SQLite database.
+    and SQLITE_FALLBACK_URL is enabled (non-production only), falls back to a local SQLite database.
+    In production mode, failing to connect to PostgreSQL will never fall back to SQLite.
     """
-    # 1. Check if testing environment or SQLite forced
+    # 1. Strict production mode - PostgreSQL only, never fall back to SQLite
+    if settings.ENVIRONMENT == "production":
+        return create_engine(
+            settings.DATABASE_URL,
+            pool_pre_ping=True,
+            pool_size=15,
+            max_overflow=25,
+        )
+
+    # 2. Testing environment or local development with optional SQLite fallback
     if settings.ENVIRONMENT == "testing" or settings.USE_SQLITE_FALLBACK:
         try:
             # First attempt connecting to PostgreSQL
@@ -44,7 +54,7 @@ def get_engine():
                 connect_args={"check_same_thread": False},
             )
 
-    # 2. Strict production PostgreSQL
+    # 3. Default fallback for other environments
     return create_engine(
         settings.DATABASE_URL,
         pool_pre_ping=True,

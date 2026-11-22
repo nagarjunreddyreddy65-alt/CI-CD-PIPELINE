@@ -5,7 +5,7 @@ Exposes endpoints for code change analysis and AST dependency graph queries.
 
 import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.analysis.dependency_analyzer import ASTDependencyAnalyzer
@@ -16,16 +16,22 @@ router = APIRouter(prefix="/analysis", tags=["Code & AST Dependency Analysis"])
 
 
 class FileChangeItem(BaseModel):
-    path: str = Field(..., description="Relative file path in repository")
-    change_type: str = Field(default="MODIFIED", description="ADDED | MODIFIED | DELETED | RENAMED")
+    path: str = Field(..., max_length=1024, description="Relative file path in repository")
+    change_type: str = Field(
+        default="MODIFIED", max_length=50, description="ADDED | MODIFIED | DELETED | RENAMED"
+    )
     lines_added: int = Field(default=0, ge=0)
-    lines_deleted: int = 0
-    old_path: str | None = None
+    lines_deleted: int = Field(default=0, ge=0)
+    old_path: str | None = Field(default=None, max_length=1024)
 
 
 class DiffAnalysisRequest(BaseModel):
-    repository_path: str | None = Field(default=".", description="Path to repository root")
-    files: list[FileChangeItem] = Field(..., description="List of changed files in commit/PR")
+    repository_path: str | None = Field(
+        default=".", max_length=1024, description="Path to repository root"
+    )
+    files: list[FileChangeItem] = Field(
+        ..., max_length=1000, description="List of changed files in commit/PR"
+    )
 
 
 @router.post(
@@ -38,9 +44,54 @@ def analyze_diff(
     _authorized: bool = Depends(verify_runner_token),
 ):
     """Analyzes commit diff and maps downstream test dependencies."""
-    root_dir = os.path.abspath(payload.repository_path)
-    if not os.path.exists(root_dir):
-        root_dir = os.getcwd()
+    repo_input = payload.repository_path or "."
+    clean_repo = os.path.normpath(repo_input).replace("\\", "/")
+    if (
+        os.path.isabs(repo_input)
+        or clean_repo.startswith(("../", "..", "//", "\\\\"))
+        or "/../" in clean_repo
+        or bool(len(clean_repo) > 1 and clean_repo[1] == ":")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid repository path: path traversal or absolute/drive/UNC path is forbidden ('{payload.repository_path}')",
+        )
+
+    approved_root = os.path.abspath(os.getcwd())
+    candidate_dir = os.path.abspath(os.path.join(approved_root, clean_repo))
+    real_candidate = os.path.realpath(candidate_dir)
+    real_approved = os.path.realpath(approved_root)
+    try:
+        if os.path.commonpath([real_approved, real_candidate]) != real_approved:
+            raise ValueError("Boundary escape")
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid repository path: path escapes approved workspace boundary",
+        )
+
+    root_dir = real_candidate
+
+    # Reject path traversal attempts in file paths
+    for f in payload.files:
+        clean = os.path.normpath(f.path).replace("\\", "/")
+        if clean.startswith("../") or clean == ".." or "/../" in clean or os.path.isabs(f.path):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file path: path traversal is forbidden ('{f.path}')",
+            )
+        if f.old_path:
+            clean_old = os.path.normpath(f.old_path).replace("\\", "/")
+            if (
+                clean_old.startswith("../")
+                or clean_old == ".."
+                or "/../" in clean_old
+                or os.path.isabs(f.old_path)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid old file path: path traversal is forbidden ('{f.old_path}')",
+                )
 
     mapper = TestDependencyMapper(root_dir)
     file_dicts = [f.model_dump() for f in payload.files]

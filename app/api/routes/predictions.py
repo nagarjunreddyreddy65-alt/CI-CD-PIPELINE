@@ -4,9 +4,13 @@ Exposes endpoints for pipeline failure risk assessment, runtime prediction,
 and model training/registration.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.security import verify_admin_token, verify_runner_token
+from app.database.session import get_db
 from app.ml.feature_extractor import FeatureExtractor
 from app.ml.model_manager import ModelManager
 
@@ -32,6 +36,10 @@ class TrainRequest(BaseModel):
     n_samples: int = Field(
         default=50, ge=15, description="Number of bootstrap training samples (min 15)"
     )
+    data_source: str = Field(
+        default="SYNTHETIC_BOOTSTRAP",
+        description="Data provenance: 'SYNTHETIC_BOOTSTRAP' or 'GENUINE_PIPELINE_TELEMETRY'",
+    )
 
 
 @router.post(
@@ -39,7 +47,10 @@ class TrainRequest(BaseModel):
     summary="Predict Failure Risk & Runtime Duration",
     description="Infers pipeline failure probability and expected test execution time from pre-execution features.",
 )
-def predict_pipeline(payload: PredictRequest):
+def predict_pipeline(
+    payload: PredictRequest,
+    _authorized: bool = Depends(verify_runner_token),
+):
     """Generates failure risk probability and runtime duration estimates."""
     features = FeatureExtractor.extract_features(
         changed_files_count=payload.changed_files_count,
@@ -81,15 +92,45 @@ def predict_pipeline(payload: PredictRequest):
     summary="Train & Register ML Models",
     description="Trains Random Forest Classifier and Regressor using historical/bootstrap pipeline telemetry.",
 )
-def train_models(payload: TrainRequest):
-    """Trains and serializes both predictive models."""
+def train_models(
+    payload: TrainRequest,
+    db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_admin_token),
+):
+    """Trains and serializes both predictive models with role separation and strict provenance."""
+    if payload.data_source not in ("GENUINE_PIPELINE_TELEMETRY", "SYNTHETIC_BOOTSTRAP"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Invalid data_source '{payload.data_source}'. "
+                "Must be 'GENUINE_PIPELINE_TELEMETRY' or 'SYNTHETIC_BOOTSTRAP'."
+            ),
+        )
+
     try:
-        result = model_manager.train_and_persist(n_samples=payload.n_samples)
+        if payload.data_source == "GENUINE_PIPELINE_TELEMETRY":
+            result = model_manager.train_from_database(
+                db=db,
+                min_runs=settings.MIN_TRAINING_RUNS,
+            )
+        else:
+            result = model_manager.train_and_persist(
+                n_samples=payload.n_samples,
+                data_source="SYNTHETIC_BOOTSTRAP",
+                genuine_historical_runs_count=0,
+            )
         return {
             "success": True,
             "data": result,
         }
-    except (ValueError, OSError, RuntimeError) as e:
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except (OSError, RuntimeError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Model training failed: {e!s}",

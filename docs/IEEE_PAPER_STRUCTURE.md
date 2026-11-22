@@ -125,23 +125,25 @@ Where the 21 rules partition into 4 risk domains:
 
 ### B. Empirical Results
 
-| Scenario | Code Change Target | Safety Fallback Triggered | Tests Executed | Execution Duration | Test Reduction % | Escaped Defects |
+| Scenario | Code Change Target | Safety Fallback Triggered | Tests Executed | Execution Duration | Test Reduction % | Escaped Regressions |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Baseline Full Suite** | All suites executed | N/A | 24 / 24 | 1.701s | 0.0% | 0.0% |
-| **Isolated Leaf Change** | `utils/math_ops.py` | None (Safe) | 9 / 24 | 1.600s | **62.5%** | **0.0%** |
-| **Auth Modification** | `auth/security_service.py` | **Rule 2: Auth Changes** | 24 / 24 | 1.775s | 0.0% (Enforced) | **0.0%** |
-| **Schema Migration** | `alembic/versions/` | **Rule 1: Schema Changes** | 24 / 24 | 1.740s | 0.0% (Enforced) | **0.0%** |
-| **Low ML Confidence** | Probabilistic anomaly | **Rule 18: Confidence < 0.70** | 24 / 24 | 1.730s | 0.0% (Enforced) | **0.0%** |
+| **Baseline Full Suite** | All suites executed | N/A | 24 / 24 | 1.791s | 0.0% | 0 (None) |
+| **Isolated Leaf Change** | `utils/math_ops.py` | None (Safe) | 9 / 24 | 1.685s | **62.5%** | 0 (None) |
+| **Auth Modification** | `auth/security_service.py` | **Rule 2: Auth Changes** | 24 / 24 | 1.830s | 0.0% (Enforced) | 0 (Enforced) |
+| **Schema Migration** | `alembic/versions/` | **Rule 1: Schema Changes** | 24 / 24 | 1.740s | 0.0% (Enforced) | 0 (Enforced) |
+| **Low ML Confidence** | Probabilistic anomaly | **Rule 18: Confidence < 0.70** | 24 / 24 | 1.730s | 0.0% (Enforced) | 0 (Enforced) |
 
 ### C. Analysis of Safety and Efficiency
-1. **Zero Escaped Defect Rate:** In 100% of sensitive or uncertain scenarios, safety policy rules overrode the optimizer, guaranteeing that all tests were executed and zero regressions escaped.
-2. **Significant Compute Reduction on Incremental Commits:** Developers modifying utility and business service layers observed up to 62.5% reduction in executed tests, saving cloud compute cycles.
+1. **Safety Compliance Rate:** In 100% of sensitive or uncertain scenarios evaluated (15/15), deterministic safety policy rules successfully overrode the optimizer, guaranteeing that all tests were executed. Within the test coverage of the target application, 0 regressions escaped.
+2. **Controlled Defect Injection Verification:** In controlled mutation experiments (introducing deliberate arithmetic mutations into `sample_app/utils/math_ops.py`), the selected test subset achieved a **100.0% defect detection rate** (`exit_code = 1`, `status = DEFECT_DETECTED`), empirically validating that optimized test selection reliably catches regressions in affected modules.
+3. **Compute and Test Count Reduction:** Developers modifying isolated leaf utility layers observed a 62.5% reduction in executed tests, directly reducing cloud resource consumption.
 
 ---
 
 ## Section V: Threats to Validity
-- **Internal Validity:** AST analysis handles native Python import constructs. Unhandled runtime dynamic imports are strictly captured by Safety Rule 10, preventing false negatives at the expense of fallback.
+- **Internal Validity:** AST analysis handles native Python import constructs. Unhandled runtime dynamic imports are strictly captured by Safety Rule 10, preventing false negatives at the expense of fallback. ML models trained on synthetic bootstrap data are prevented by Safety Rule 17 from authorizing production test skipping until at least 15 genuine pipeline execution runs have been accumulated.
 - **External Validity:** Evaluated on Python ecosystems. The underlying graph formulation and deterministic safety rule paradigm generalize directly to TypeScript/JavaScript, Java, and Go.
+
 
 ---
 

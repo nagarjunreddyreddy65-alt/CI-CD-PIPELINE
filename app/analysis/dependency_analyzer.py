@@ -18,6 +18,21 @@ class DynamicImportDetector(ast.NodeVisitor):
 
     def __init__(self):
         self.dynamic_imports: list[dict[str, Any]] = []
+        self.importlib_aliases: set[str] = {"importlib"}
+        self.import_module_aliases: set[str] = {"import_module"}
+
+    def visit_Import(self, node: ast.Import):
+        for alias in node.names:
+            if alias.name == "importlib":
+                self.importlib_aliases.add(alias.asname or "importlib")
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom):
+        if node.module == "importlib":
+            for alias in node.names:
+                if alias.name == "import_module":
+                    self.import_module_aliases.add(alias.asname or "import_module")
+        self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call):
         # 1. Detect __import__(...)
@@ -38,18 +53,27 @@ class DynamicImportDetector(ast.NodeVisitor):
                     "reason": f"Dynamic evaluation via {node.func.id}()",
                 }
             )
-        # 3. Detect importlib.import_module(...)
+        # 3. Detect importlib.import_module(...) or aliased_importlib.import_module(...)
         elif (
             isinstance(node.func, ast.Attribute)
             and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "importlib"
+            and node.func.value.id in self.importlib_aliases
             and node.func.attr == "import_module"
         ):
             self.dynamic_imports.append(
                 {
                     "type": "importlib.import_module",
                     "line": node.lineno,
-                    "reason": "Dynamic module loading via importlib.import_module()",
+                    "reason": f"Dynamic module loading via {node.func.value.id}.import_module()",
+                }
+            )
+        # 4. Detect direct or aliased call to import_module(...)
+        elif isinstance(node.func, ast.Name) and node.func.id in self.import_module_aliases:
+            self.dynamic_imports.append(
+                {
+                    "type": "importlib.import_module",
+                    "line": node.lineno,
+                    "reason": f"Dynamic module loading via imported function {node.func.id}()",
                 }
             )
         self.generic_visit(node)
@@ -119,6 +143,18 @@ class DependencyGraph:
             return set()
         # Predecessors in nx.DiGraph where edges are A -> B (A imports B) are modules that import A
         return set(nx.ancestors(self.graph, module_name))
+
+    def find_cycles(self) -> list[list[str]]:
+        """Finds all simple cycles in the directed dependency graph."""
+        try:
+            return list(nx.simple_cycles(self.graph))
+        except (nx.NetworkXError, ValueError) as e:
+            logger.warning(f"Failed to compute graph cycles: {e}")
+            return []
+
+    def is_acyclic(self) -> bool:
+        """Verifies that the dependency graph contains no circular import cycles."""
+        return nx.is_directed_acyclic_graph(self.graph)
 
     def has_unresolved_or_errors(self) -> bool:
         """Checks if any file failed to parse or contains unresolvable dynamic imports."""

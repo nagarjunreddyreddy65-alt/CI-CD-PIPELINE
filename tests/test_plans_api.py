@@ -2,38 +2,54 @@
 API Tests for Plan Generation & Retrieval Endpoints.
 """
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+import pytest
 
-from app.database.models import Base
-from app.database.session import get_db
-from app.main import app
-
-# Setup shared in-memory test database with StaticPool for API testing
-engine = create_engine(
-    "sqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base.metadata.create_all(bind=engine)
+from app.database.models import Commit, PipelineRun, Repository
 
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+@pytest.fixture(autouse=True)
+def seed_plans_db(db_session):
+    """Seeds historical pipeline runs so the test database meets the MIN_TRAINING_RUNS threshold."""
+    repo = (
+        db_session.query(Repository)
+        .filter(Repository.name == "AutonomousDevOps/CI-CD-PIPELINE")
+        .first()
+    )
+    if not repo:
+        repo = Repository(
+            name="AutonomousDevOps/CI-CD-PIPELINE",
+            owner="AutonomousDevOps",
+            clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+            default_branch="main",
+        )
+        db_session.add(repo)
+        db_session.flush()
+
+    for i in range(20):
+        c_hash = f"seed-plan-commit-{i:03d}"
+        commit = Commit(
+            repository_id=repo.id,
+            commit_hash=c_hash,
+            branch="main",
+            author_name="CI Runner",
+            author_email="runner@ci.local",
+            message=f"Seed pipeline run {i}",
+        )
+        db_session.add(commit)
+        db_session.flush()
+        run = PipelineRun(
+            repository_id=repo.id,
+            commit_id=commit.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=20.0,
+        )
+        db_session.add(run)
+    db_session.commit()
 
 
-app.dependency_overrides[get_db] = override_get_db
-client = TestClient(app)
-
-
-def test_api_generate_plan_optimized():
+def test_api_generate_plan_optimized(client):
     payload = {
         "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
         "commit_hash": "a1b2c3d4e5f6",
@@ -75,7 +91,7 @@ def test_api_generate_plan_optimized():
     assert plan_data["decision"] == "OPTIMIZED"
 
 
-def test_api_generate_plan_auth_fallback():
+def test_api_generate_plan_auth_fallback(client):
     payload = {
         "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
         "commit_hash": "f6e5d4c3b2a1",
@@ -107,7 +123,28 @@ def test_api_generate_plan_auth_fallback():
     assert data["tests_reduction_pct"] == 0.0
 
 
-def test_api_list_plans():
+def test_api_list_plans(client):
+    # Generate at least two plans
+    for i in range(2):
+        client.post(
+            "/api/v1/plans/generate",
+            json={
+                "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
+                "commit_hash": f"list-plan-sha-{i}",
+                "branch": "main",
+                "author_name": "Dev",
+                "author_email": "dev@ci.local",
+                "commit_message": f"List plan test {i}",
+                "changed_files": [
+                    {
+                        "file_path": "sample_app/utils/math_ops.py",
+                        "change_type": "MODIFIED",
+                        "lines_added": 2,
+                        "lines_deleted": 0,
+                    }
+                ],
+            },
+        )
     response = client.get("/api/v1/plans?limit=10&offset=0")
     assert response.status_code == 200
     data = response.json()
@@ -116,6 +153,63 @@ def test_api_list_plans():
     assert data["count"] >= 2
 
 
-def test_api_plan_not_found():
+def test_api_plan_not_found(client):
     response = client.get("/api/v1/plans/non-existent-uuid-99999")
     assert response.status_code == 404
+
+
+def test_api_generate_plan_path_traversal_rejected(client):
+    """Tests POST /api/v1/plans/generate rejects path traversal attempts."""
+    payload = {
+        "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
+        "commit_hash": "c81a293f0b4d",
+        "branch": "main",
+        "author_name": "Developer",
+        "author_email": "dev@example.com",
+        "commit_message": "Exploit attempt",
+        "changed_files": [
+            {
+                "file_path": "../../etc/shadow",
+                "change_type": "MODIFIED",
+                "lines_added": 1,
+                "lines_deleted": 0,
+            }
+        ],
+    }
+    response = client.post("/api/v1/plans/generate", json=payload)
+    assert response.status_code == 400
+    assert "path traversal is forbidden" in response.json()["detail"]
+
+
+def test_api_generate_plan_spoofed_runs_rejected(client, db_session):
+    """
+    Verifies that when database has insufficient genuine runs (< 15),
+    a caller supplying a high historical_runs_count is ignored, and Rule 17 triggers FULL_SUITE.
+    """
+    db_session.query(PipelineRun).delete()
+    db_session.commit()
+
+    payload = {
+        "repository_name": "AutonomousDevOps/CI-CD-PIPELINE",
+        "commit_hash": "spoof-test-hash",
+        "branch": "main",
+        "author_name": "Adversary",
+        "author_email": "attacker@example.com",
+        "commit_message": "Attempt to bypass Rule 17",
+        "changed_files": [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 1,
+            }
+        ],
+        "historical_runs_count": 999,  # Spoofed high count
+    }
+
+    res = client.post("/api/v1/plans/generate", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["decision"] == "FULL_SUITE"
+    assert data["fallback_triggered"] is True
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" in data["triggered_safety_rules"]

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 CI/CD Runner Integration Script.
 Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization.
@@ -96,14 +95,63 @@ def get_commit_metadata() -> dict:
 
 
 def request_plan_from_api(api_url: str, payload: dict) -> dict:
-    """Requests execution plan from FastAPI backend with timeout."""
+    """Requests execution plan from FastAPI backend with timeout and runner auth."""
     if httpx is None:
         raise RuntimeError("httpx is not installed")
 
+    runner_token = os.getenv("RUNNER_API_KEY", "autonomous_devops_runner_dev_api_key_2026")
     endpoint = f"{api_url.rstrip('/')}/api/v1/plans/generate"
-    response = httpx.post(endpoint, json=payload, timeout=8.0)
+    headers = {"X-Runner-Token": runner_token}
+    response = httpx.post(endpoint, json=payload, headers=headers, timeout=8.0)
     response.raise_for_status()
     return response.json()
+
+
+def validate_plan_response(plan: object) -> tuple[bool, str]:
+    """
+    Validates execution plan payload from optimization backend.
+    Enforces that untrusted or malformed API responses cannot mislead the runner into unsafe behavior.
+    """
+    if not isinstance(plan, dict):
+        return False, "Plan response must be a JSON dictionary"
+
+    required_keys = ["decision", "is_optimized", "fallback_triggered", "selected_tests"]
+    for k in required_keys:
+        if k not in plan:
+            return False, f"Missing required field in plan: {k}"
+
+    decision = plan.get("decision")
+    if decision not in ("OPTIMIZED", "FULL_SUITE"):
+        return False, f"Invalid execution decision: {decision}"
+
+    is_optimized = plan.get("is_optimized")
+    fallback_triggered = plan.get("fallback_triggered")
+    selected_tests = plan.get("selected_tests")
+
+    if not isinstance(is_optimized, bool) or not isinstance(fallback_triggered, bool):
+        return False, "is_optimized and fallback_triggered must be booleans"
+
+    if not isinstance(selected_tests, list):
+        return False, "selected_tests must be a list"
+
+    # Optimization consistency checks
+    if decision == "OPTIMIZED":
+        if not is_optimized or fallback_triggered:
+            return (
+                False,
+                "Inconsistent plan: decision OPTIMIZED but fallback_triggered=True or is_optimized=False",
+            )
+        if len(selected_tests) == 0:
+            return False, "Inconsistent plan: decision OPTIMIZED but selected_tests is empty"
+        for t in selected_tests:
+            if not isinstance(t, str) or not t.strip():
+                return False, "selected_tests contains empty or invalid test identifier"
+            if any(char in t for char in [";", "&", "|", "`", "$", "\n", "\r"]):
+                return False, f"Test identifier contains unsafe characters: {t}"
+    elif decision == "FULL_SUITE" and is_optimized:
+        return False, "Inconsistent plan: decision FULL_SUITE but is_optimized=True"
+
+    return True, "Valid plan response"
 
 
 def execute_test_command(command_args: list) -> tuple:
@@ -181,15 +229,34 @@ def main():
             "author_email": commit_meta["author_email"],
             "commit_message": commit_meta["commit_message"],
             "changed_files": changed_files,
-            "historical_failure_rate": 0.05,
-            "previous_execution_duration": 25.0,
-            "historical_runs_count": 20,
             "risk_threshold": 0.50,
         }
 
         try:
             print(f"🔍 Requesting execution plan from: {args.api_url} ...")
-            plan = request_plan_from_api(args.api_url, payload)
+            raw_plan = request_plan_from_api(args.api_url, payload)
+            is_valid, validation_reason = validate_plan_response(raw_plan)
+            if not is_valid:
+                print(f"⚠️  [Safety Rule 21 Triggered] Plan validation failed: {validation_reason}")
+                print("🛡️  Enforcing MANDATORY FULL-SUITE FALLBACK for guaranteed safety.")
+                plan = {
+                    "decision": "FULL_SUITE",
+                    "decision_reason": f"Safety Rule 21: Malformed plan response ({validation_reason})",
+                    "is_optimized": False,
+                    "fallback_triggered": True,
+                    "fallback_reason": f"Safety Rule 21: Malformed plan response ({validation_reason})",
+                    "selected_tests": [],
+                    "pytest_command": "python -m pytest tests/ tests_sample_app/ -v",
+                    "selected_tests_count": 0,
+                    "total_tests_count": 0,
+                    "tests_reduction_pct": 0.0,
+                    "predicted_failure_probability": 0.0,
+                    "predicted_duration_sec": 0.0,
+                    "estimated_time_saved_sec": 0.0,
+                    "triggered_safety_rules": ["RULE_21_UNVERIFIABLE_SAFETY"],
+                }
+            else:
+                plan = raw_plan
         except (httpx.HTTPError, RuntimeError, OSError) as e:
             print(f"⚠️  [Safety Rule 19 Triggered] API unreachable or error ({e}).")
             print("🛡️  Enforcing MANDATORY FULL-SUITE FALLBACK for guaranteed safety.")
@@ -265,9 +332,11 @@ def main():
                 "total_duration_sec": duration_sec,
                 "status": "SUCCESS" if returncode == 0 else "FAILED",
             }
+            runner_token = os.getenv("RUNNER_API_KEY", "autonomous_devops_runner_dev_api_key_2026")
             httpx.post(
                 f"{args.api_url.rstrip('/')}/api/v1/telemetry/record",
                 json=telemetry_payload,
+                headers={"X-Runner-Token": runner_token},
                 timeout=5.0,
             )
             print("📡 Execution telemetry reported to backend.")

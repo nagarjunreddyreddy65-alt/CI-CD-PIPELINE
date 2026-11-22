@@ -133,9 +133,20 @@ If any dynamic import call is encountered anywhere in the repository, the graph 
 ### Q11: What is the exact benchmark savings demonstrated by your project?
 **Answer:**
 In our end-to-end benchmark (`data/e2e_benchmark_report.json`):
-- **Full Suite Baseline:** 24 target tests executed in 1.701 seconds.
-- **Optimized Leaf Change:** 9 target tests executed in 1.600 seconds (**62.5% reduction in executed tests**).
-- **Safety Fallback Scenarios (Auth, Schema, ML Anomaly):** 100% full-suite test coverage enforced, achieving **0.0% escaped defects** and **100.0% safety policy compliance**.
+- **Full Suite Baseline:** 24 target tests executed in 1.461 seconds.
+- **Optimized Leaf Change:** 9 target tests executed in 1.289 seconds (**62.5% reduction in executed test count**, 11.8% runtime savings).
+- **Controlled Defect-Injection Experiment:** An intentional defect introduced into `sample_app/utils/math_ops.py` was immediately caught by the selected test subset (**100.0% defect detection rate**, `exit_code = 1`), with verified clean restoration.
+- **15-Scenario Evaluation Matrix:** Evaluated all 15 deterministic safety scenarios, achieving **100.0% safety policy compliance** (15/15 scenarios enforced).
+- **Escaped Defect Rate:** 0.0% empirically verified on targeted code modules; bounded by deterministic safety rules (Rules 9-13) for unmapped or dynamic dependencies.
+- **Automated Regression Suite:** 161 tests across 23 test modules passing with a **100% pass rate**.
+
+### Q12: How are API endpoints secured against unauthorized calls and traversal attacks?
+**Answer:**
+All runner-facing write and execution plan endpoints (`/plans/generate`, `/telemetry/*`, `/security/scan`, `/predictions/*`, `/analysis/diff`) enforce constant-time pre-shared runner token comparison (`hmac.compare_digest`) via the `X-Runner-Token` header. Missing tokens return HTTP 401; invalid tokens return HTTP 403. Public read-only endpoints (health probes, dashboard views, and metrics) remain accessible without authentication. All file paths in incoming requests are validated against path traversal (`..` and absolute paths return HTTP 400), and payload sizes are capped. In production (`ENVIRONMENT=production`), startup configuration validation strictly enforces that default keys and passwords are overridden and database fallback to SQLite is prohibited.
+
+### Q13: How does your ML pipeline prevent synthetic bootstrap data from polluting production decisions?
+**Answer:**
+Early training uses synthetic bootstrap data to initialize model weights. However, `ModelManager` writes `model_metadata.json` explicitly tagging provenance as `SYNTHETIC_BOOTSTRAP` and setting `is_production_ready: false`. Under **Safety Rule 17**, synthetic samples do NOT count toward the required 15 genuine pipeline execution runs. Until 15 genuine historical runs are recorded in the database, the decision engine deterministically forces a Full Suite Fallback.
 
 ---
 

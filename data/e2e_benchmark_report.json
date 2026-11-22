@@ -1,0 +1,260 @@
+{
+  "benchmark_timestamp": "2026-11-22 17:49:44Z",
+  "total_available_target_tests": 24,
+  "scenarios": {
+    "baseline_full_suite": {
+      "duration_sec": 1.83,
+      "exit_code": 0,
+      "cpu_percent": 6.8,
+      "memory_mb": 12015.4,
+      "status": "PASSED",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.34s ==============================\n",
+      "duration_mean_sec": 1.822,
+      "duration_median_sec": 1.83,
+      "duration_stdev_sec": 0.054,
+      "trials_durations": [
+        1.88,
+        1.83,
+        1.754,
+        1.779,
+        1.865
+      ],
+      "tests_executed": 24,
+      "decision": "FULL_SUITE_BASELINE",
+      "reduction_pct": 0.0
+    },
+    "optimized_math_change": {
+      "duration_sec": 1.54,
+      "exit_code": 0,
+      "cpu_percent": 14.6,
+      "memory_mb": 12100.9,
+      "status": "PASSED",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.12s ==============================\n",
+      "duration_mean_sec": 1.545,
+      "duration_median_sec": 1.54,
+      "duration_stdev_sec": 0.037,
+      "trials_durations": [
+        1.563,
+        1.598,
+        1.54,
+        1.517,
+        1.506
+      ],
+      "tests_executed": 9,
+      "decision": "OPTIMIZED",
+      "reduction_pct": 62.5,
+      "fallback_triggered": false
+    }
+  },
+  "defect_injection_experiment": {
+    "target_file": "sample_app/utils/math_ops.py",
+    "total_defect_trials": 3,
+    "all_defects_detected": true,
+    "trials": [
+      {
+        "defect_id": "defect_1_arithmetic",
+        "mutation_name": "Arithmetic operator defect ('return a + b' -> 'return a + b + 9999')",
+        "defect_detected": true,
+        "exit_code": 1,
+        "output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C"
+      },
+      {
+        "defect_id": "defect_2_comparison",
+        "mutation_name": "Comparison inversion defect ('if b == 0:' -> 'if b != 0:')",
+        "defect_detected": true,
+        "exit_code": 1,
+        "output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C"
+      },
+      {
+        "defect_id": "defect_3_return_mutation",
+        "mutation_name": "Return value mutation defect ('return a - b' -> 'return 0')",
+        "defect_detected": true,
+        "exit_code": 1,
+        "output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C"
+      }
+    ],
+    "restoration_verified": true,
+    "status": "ALL_DEFECTS_DETECTED"
+  },
+  "evaluated_scenarios": [
+    {
+      "name": "Scenario 1: Leaf Code Change",
+      "decision": "OPTIMIZED",
+      "expected_decision": "OPTIMIZED",
+      "fallback_triggered": false,
+      "triggered_rules": [],
+      "passed": true
+    },
+    {
+      "name": "Scenario 2: Auth / Security Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_2_AUTH",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 3: DB Migration Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_1_MIGRATION",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 4: Billing / Payment Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_3_PAYMENT",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 5: Cryptographic Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_4_CRYPTO",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 6: Dependency Manifest Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_5_DEPENDENCY_MANIFEST",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 7: Lock File Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_6_LOCK_FILE",
+        "RULE_8_UNSUPPORTED_FILES",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 8: CI Workflow Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_7_CI_WORKFLOW",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 9: Unsupported File Change",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_8_UNSUPPORTED_FILES",
+        "RULE_18_LOW_PREDICTION_CONFIDENCE",
+        "RULE_21_UNVERIFIABLE_SAFETY"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 10: AST Syntax Error",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_9_AST_PARSE_FAILURE"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 11: Dynamic Import Detected",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_10_DYNAMIC_IMPORT"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 12: Empty Test Selection",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_13_EMPTY_TEST_SELECTION"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 13: Missing ML Model Artifact",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_14_MODEL_ARTIFACT_MISSING"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 14: ML Low Confidence / High Risk",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_18_LOW_PREDICTION_CONFIDENCE"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Scenario 15: Insufficient Historical Runs (< 15)",
+      "decision": "FULL_SUITE",
+      "expected_decision": "FULL_SUITE",
+      "fallback_triggered": true,
+      "triggered_rules": [
+        "RULE_17_INSUFFICIENT_TRAINING_DATA"
+      ],
+      "passed": true
+    }
+  ],
+  "all_15_scenarios_passed": true,
+  "summary": {
+    "baseline_duration_sec": 1.83,
+    "optimized_duration_sec": 1.54,
+    "runtime_savings_sec": 0.29,
+    "runtime_savings_pct": 15.8,
+    "test_count_reduction_pct_on_leaf": 62.5,
+    "safety_policy_compliance_rate_pct": 100.0,
+    "total_scenarios_evaluated": 15,
+    "total_scenarios_passed": 15,
+    "controlled_defect_detection_rate_pct": 100.0,
+    "escaped_defects_rate": "0.0% (Empirically verified on targeted defect injection; bounded by deterministic safety rules)",
+    "active_safety_rules_count": 21
+  }
+}

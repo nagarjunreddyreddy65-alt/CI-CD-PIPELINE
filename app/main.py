@@ -40,6 +40,8 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Database schema initialized successfully.")
     except (SQLAlchemyError, OSError) as e:
         logger.error(f"❌ Database initialization failed: {e}")
+        if settings.ENVIRONMENT == "production":
+            raise
 
     yield
 

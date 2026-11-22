@@ -100,3 +100,11 @@ def test_analyze_changes_batch(analyzer):
     assert len(result.non_python_files) == 1
     assert result.has_auth_changes is True
     assert "AUTH_SECURITY" in result.sensitive_triggers
+
+
+def test_classify_path_traversal_detection(analyzer):
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        analyzer.classify_file("../../etc/passwd")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        analyzer.classify_file("sample_app/../../sensitive.key")

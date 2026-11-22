@@ -1,0 +1,84 @@
+{
+  "provenance": "GENUINE_PIPELINE_TELEMETRY",
+  "sample_count": 49,
+  "genuine_historical_runs_count": 50,
+  "is_production_ready": true,
+  "telemetry_provenance_hash": "dfb3d513bb367ea00ad3ac2ede95db3cf4fd1624874480f6a9e1d4f000886b42",
+  "certification_report": {
+    "is_certified": true,
+    "criteria": {
+      "min_samples_met": true,
+      "genuine_runs_met": true,
+      "holdout_evaluation_valid": true,
+      "both_classes_observed": true,
+      "holdout_both_classes_present": true,
+      "roc_auc_valid_and_acceptable": true,
+      "failure_recall_acceptable": true,
+      "runtime_r2_acceptable": true,
+      "runtime_mae_acceptable": true
+    },
+    "failure_reasons": [],
+    "evaluated_at": "2026-11-22T14:33:54.293199+00:00"
+  },
+  "trained_at": "2026-11-22T14:33:54.365095+00:00",
+  "artifact_hashes": {
+    "failure_predictor_sha256": "60dfef557ffebcc687357c30083845e507fe021286b895739f8c65c933dad67c",
+    "runtime_predictor_sha256": "f01b8f5b8dfc5ca970518c51c4533df2a531d48b37cc42a11a78c86f079a5268"
+  },
+  "failure_metrics": {
+    "model_version": "v1.0.0",
+    "total_dataset_samples": 49,
+    "training_samples": 39,
+    "test_samples": 10,
+    "evaluated_on": "HOLDOUT_TEST_SPLIT",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "roc_auc": 1.0,
+    "confusion_matrix": [
+      [
+        8,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "class_distribution": {
+      "dataset_pass_count": 40,
+      "dataset_fail_count": 9,
+      "train_pass_count": 32,
+      "train_fail_count": 7,
+      "test_pass_count": 8,
+      "test_fail_count": 2
+    },
+    "limitations": {
+      "small_sample_size": true,
+      "class_imbalance": true,
+      "positive_class_ratio": 0.1837,
+      "evaluation_note": "Metrics evaluated strictly on held-out 20% test split. Small sample sizes (< 100) or class imbalance can cause metric variance."
+    },
+    "timestamp": "2026-11-22T14:33:54.153640+00:00"
+  },
+  "runtime_metrics": {
+    "model_version": "v1.0.0",
+    "total_dataset_samples": 49,
+    "training_samples": 39,
+    "test_samples": 10,
+    "evaluated_on": "HOLDOUT_TEST_SPLIT",
+    "mae": 1.6777,
+    "rmse": 2.2126,
+    "r2_score": 0.8321,
+    "limitations": {
+      "small_sample_size": true,
+      "evaluation_note": "Metrics evaluated strictly on held-out 20% test split. Small sample sizes (< 100) have higher estimation variance."
+    },
+    "timestamp": "2026-11-22T14:33:54.293176+00:00"
+  },
+  "model_version": "v1.0.0",
+  "evaluation_notes": {
+    "sample_size_limitation": "Small datasets (< 100 samples) exhibit higher variance.",
+    "holdout_split_ratio": 0.2
+  }
+}

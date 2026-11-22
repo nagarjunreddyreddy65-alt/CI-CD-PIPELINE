@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.security import verify_runner_token
 from app.database.models import SecurityScan
 from app.database.session import get_db
 from app.security.scanner import ScanResult, SecurityScanner
@@ -39,6 +40,7 @@ class SecurityScanResponse(BaseModel):
 def submit_security_scan(
     req: SecurityScanRequest,
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """
     Submits and evaluates a security scan report (Bandit, pip-audit, Gitleaks):
@@ -80,6 +82,7 @@ def submit_security_scan(
 def get_security_scans_by_run(
     pipeline_run_id: str,
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """Retrieves all security scan records for a given pipeline run."""
     scans = db.query(SecurityScan).filter(SecurityScan.pipeline_run_id == pipeline_run_id).all()

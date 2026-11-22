@@ -29,7 +29,7 @@ from app.database.models import (
     Prediction,
     Repository,
 )
-from app.ml.feature_extractor import FeatureExtractor, PipelineFeatures
+from app.ml.feature_extractor import FeatureExtractor
 from app.ml.model_manager import ModelManager
 from app.optimization.safety_policy import (
     SafetyContext,
@@ -86,6 +86,11 @@ class DecisionEngine:
         self.change_analyzer = ChangeAnalyzer(self.root_dir)
         self.test_mapper = TestDependencyMapper(self.root_dir)
         self.model_manager = model_manager or ModelManager()
+        if (
+            not self.model_manager.failure_predictor.is_trained
+            or not self.model_manager.runtime_predictor.is_trained
+        ):
+            self.model_manager.load_models()
         self.safety_evaluator = safety_evaluator or SafetyPolicyEvaluator()
         self.test_selector = test_selector or TestSelector()
         self.feature_extractor = FeatureExtractor()
@@ -128,36 +133,133 @@ class DecisionEngine:
         selected_candidate_tests = mapping_res.affected_test_identifiers
         affected_modules = mapping_res.affected_modules
 
-        # Step 3: Feature Extraction (guaranteed pre-execution only)
-        features: PipelineFeatures = self.feature_extractor.extract(
-            changed_files_count=change_res.total_changed_files,
-            lines_added=change_res.total_lines_added,
-            lines_deleted=change_res.total_lines_deleted,
-            affected_modules_count=len(affected_modules),
-            selected_tests_count=len(selected_candidate_tests),
-            is_sensitive_change=change_res.is_sensitive,
-            has_test_file_changes=change_res.has_test_changes,
-            historical_failure_rate=historical_failure_rate,
-            previous_execution_duration=previous_execution_duration,
+        # Step 3: Historical Telemetry Resolution (Server-side DB verification takes precedence)
+        historical_features_available = True
+        if db is not None:
+            try:
+                completed_db_runs = (
+                    db.query(PipelineRun)
+                    .filter(PipelineRun.status.in_(["SUCCESS", "FAILED"]))
+                    .order_by(PipelineRun.created_at.desc())
+                    .limit(50)
+                    .all()
+                )
+                effective_historical_runs = len(completed_db_runs)
+                if effective_historical_runs >= 15:
+                    failed_runs = sum(1 for r in completed_db_runs if r.status == "FAILED")
+                    effective_failure_rate = round(failed_runs / effective_historical_runs, 4)
+                    valid_dur_runs = [
+                        r
+                        for r in completed_db_runs
+                        if float(getattr(r, "total_duration_sec", 0.0) or 0.0) > 0.0
+                    ]
+                    if valid_dur_runs:
+                        effective_prev_duration = float(valid_dur_runs[0].total_duration_sec)
+                    else:
+                        effective_prev_duration = None
+                        historical_features_available = False
+                else:
+                    effective_failure_rate = None
+                    effective_prev_duration = None
+                    historical_features_available = False
+            except SQLAlchemyError as e:
+                logger.warning(f"Failed to query historical runs from DB: {e}")
+                effective_historical_runs = 0
+                effective_failure_rate = None
+                effective_prev_duration = None
+                historical_features_available = False
+        else:
+            effective_historical_runs = (
+                historical_runs_count if historical_runs_count is not None else 0
+            )
+            effective_failure_rate = historical_failure_rate
+            effective_prev_duration = previous_execution_duration
+            if (
+                effective_historical_runs < 15
+                or effective_failure_rate is None
+                or effective_prev_duration is None
+            ):
+                historical_features_available = False
+
+        # Ensure models are loaded and verified
+        is_trained = (
+            self.model_manager.failure_predictor.is_trained
+            and self.model_manager.runtime_predictor.is_trained
         )
+        if not is_trained:
+            self.model_manager.load_models()
+            is_trained = (
+                self.model_manager.failure_predictor.is_trained
+                and self.model_manager.runtime_predictor.is_trained
+            )
 
-        # Step 4: ML Predictions
-        fail_res = self.model_manager.failure_predictor.predict(features)
-        fail_prob = fail_res.predicted_failure_probability
-        fail_class = fail_res.predicted_failure_class
-        confidence = fail_res.confidence
-
-        runtime_res = self.model_manager.runtime_predictor.predict(features)
-        pred_duration = runtime_res.predicted_duration_sec
-
-        # Check model artifact presence and compatibility
         models_status = self.model_manager.get_models_status()
-        model_artifacts_exist = (
+        base_artifacts_exist = (
             models_status["failure_predictor"]["model_file_exists"]
             and models_status["runtime_predictor"]["model_file_exists"]
+            and is_trained
         )
 
-        # Step 5: Construct Safety Context & Evaluate Deterministic Rules
+        can_pred, can_pred_reason = self.model_manager.can_predict(
+            genuine_historical_runs_count=effective_historical_runs
+        )
+
+        model_missing_or_invalid = not base_artifacts_exist or (
+            "Safety Rule 14" in (can_pred_reason if not can_pred else "")
+        )
+
+        # If server-side historical features are unavailable or DB query failed, force FULL_SUITE without invented features
+        if not historical_features_available and can_pred:
+            can_pred = False
+            can_pred_reason = (
+                f"Safety Rule 17: Reliable server-side historical metrics unavailable or database query failed "
+                f"(genuine runs: {effective_historical_runs}). Full suite fallback enforced."
+            )
+
+        # If model artifacts are missing, corrupt, synthetic, or uncertified, flag Rule 14
+        model_artifacts_exist = base_artifacts_exist and not model_missing_or_invalid
+
+        # Step 4 & 5: Feature Extraction & ML Predictions (guaranteed pre-execution only)
+        if can_pred and effective_failure_rate is not None and effective_prev_duration is not None:
+            features = self.feature_extractor.extract(
+                changed_files_count=change_res.total_changed_files,
+                lines_added=change_res.total_lines_added,
+                lines_deleted=change_res.total_lines_deleted,
+                affected_modules_count=len(affected_modules),
+                selected_tests_count=len(selected_candidate_tests),
+                is_sensitive_change=change_res.is_sensitive,
+                has_test_file_changes=change_res.has_test_changes,
+                historical_failure_rate=effective_failure_rate,
+                previous_execution_duration=effective_prev_duration,
+            )
+            fail_res = self.model_manager.failure_predictor.predict(features)
+            fail_prob = fail_res.predicted_failure_probability
+            fail_class = fail_res.predicted_failure_class
+            confidence = fail_res.confidence
+
+            runtime_res = self.model_manager.runtime_predictor.predict(features)
+            pred_duration = runtime_res.predicted_duration_sec
+            features_dict = features.to_dict()
+        else:
+            # Fallback path: do not invoke ML on invented inputs
+            fail_prob = 0.0
+            fail_class = 0
+            confidence = 0.0
+            pred_duration = 0.0
+            features_dict = {
+                "changed_files_count": change_res.total_changed_files,
+                "lines_added": change_res.total_lines_added,
+                "lines_deleted": change_res.total_lines_deleted,
+                "total_lines_changed": change_res.total_lines_added
+                + change_res.total_lines_deleted,
+                "affected_modules_count": len(affected_modules),
+                "selected_tests_count": len(selected_candidate_tests),
+                "is_sensitive_change": change_res.is_sensitive,
+                "has_test_file_changes": change_res.has_test_changes,
+                "historical_runs_count": effective_historical_runs,
+            }
+
+        # Step 6: Construct Safety Context & Evaluate Deterministic Rules
         # Check AST parse and dynamic import status from mapping
         has_ast_error = "Safety Rule 9" in (mapping_res.fallback_reason or "")
         has_dynamic_imp = "Safety Rule 10" in (mapping_res.fallback_reason or "")
@@ -166,6 +268,16 @@ class DecisionEngine:
         is_empty_selection = (
             len(selected_candidate_tests) == 0 and change_res.total_changed_files > 0
         )
+
+        model_ver_ok, model_ver_reason = self.model_manager.is_version_compatible()
+
+        fallback_custom_reason = (
+            mapping_res.fallback_reason
+            if mapping_res.fallback_required
+            else (None if can_pred else can_pred_reason)
+        )
+        if not model_ver_ok and not fallback_custom_reason:
+            fallback_custom_reason = f"Safety Rule 15: {model_ver_reason}"
 
         safety_ctx = SafetyContext(
             has_migration_changes=change_res.has_migration_changes,
@@ -183,16 +295,15 @@ class DecisionEngine:
             is_test_selection_empty=is_empty_selection,
             non_empty_code_change=(change_res.total_changed_files > 0),
             model_artifact_exists=model_artifacts_exist,
-            model_version_compatible=True,
+            model_version_compatible=model_ver_ok,
             predicted_probability=fail_prob,
+            predicted_duration=pred_duration,
             prediction_confidence=confidence,
-            historical_runs_count=historical_runs_count,
+            historical_runs_count=effective_historical_runs,
             api_reachable=True,
             github_api_success=True,
             unverifiable_safety_detected=False,
-            custom_fallback_reason=mapping_res.fallback_reason
-            if mapping_res.fallback_required
-            else None,
+            custom_fallback_reason=fallback_custom_reason,
         )
 
         safety_res: SafetyEvaluationResult = self.safety_evaluator.evaluate(safety_ctx)
@@ -205,10 +316,14 @@ class DecisionEngine:
         # Final Decision Formulation
         triggered_rules_names = [t.rule_code.value for t in safety_res.triggered_rules]
 
-        if not safety_res.is_safe_to_optimize:
+        if not can_pred or not safety_res.is_safe_to_optimize:
             decision = ExecutionDecision.FULL_SUITE
             fallback_triggered = True
-            fallback_reason = safety_res.primary_fallback_reason
+            fallback_reason = (
+                safety_res.primary_fallback_reason
+                if not safety_res.is_safe_to_optimize
+                else can_pred_reason
+            )
             decision_reason = (
                 f"Full test suite required by deterministic safety policy: {fallback_reason}."
             )
@@ -242,7 +357,11 @@ class DecisionEngine:
 
         # Calculate estimated time saved
         # If optimized: saved time = (baseline_duration) * (reduction_pct / 100)
-        baseline_time = previous_execution_duration if previous_execution_duration > 0 else 30.0
+        baseline_time = (
+            effective_prev_duration
+            if (effective_prev_duration and effective_prev_duration > 0)
+            else 30.0
+        )
         if decision == ExecutionDecision.OPTIMIZED:
             estimated_time_saved = round(
                 baseline_time * (selected_plan.reduction_percentage / 100.0), 2
@@ -267,7 +386,7 @@ class DecisionEngine:
             predicted_duration_sec=pred_duration,
             estimated_time_saved_sec=estimated_time_saved,
             triggered_safety_rules=triggered_rules_names,
-            features=features.to_dict(),
+            features=features_dict,
             model_version=models_status["failure_predictor"]["version"],
         )
 
@@ -276,6 +395,7 @@ class DecisionEngine:
             self._persist_to_db(
                 db=db,
                 plan_result=plan_result,
+                all_tests=all_tests,
                 changed_file_entries=changed_file_entries,
                 repository_name=repository_name or "AutonomousDevOps/CI-CD-PIPELINE",
                 commit_hash=commit_hash or f"commit-{int(time.time())}",
@@ -291,6 +411,7 @@ class DecisionEngine:
         self,
         db: Session,
         plan_result: ExecutionPlanResult,
+        all_tests: list[str],
         changed_file_entries: list[dict[str, Any]],
         repository_name: str,
         commit_hash: str,
@@ -408,3 +529,24 @@ class DecisionEngine:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Error persisting execution plan to DB: {e}")
+            plan_result.decision = ExecutionDecision.FULL_SUITE
+            plan_result.is_optimized = False
+            plan_result.fallback_triggered = True
+            plan_result.fallback_reason = f"Safety Rule 21: Database persistence failure: audit record could not be stored ({e})"
+            plan_result.decision_reason = f"Full test suite required by deterministic safety policy: {plan_result.fallback_reason}."
+            if "RULE_21_UNVERIFIABLE_SAFETY" not in plan_result.triggered_safety_rules:
+                plan_result.triggered_safety_rules.append("RULE_21_UNVERIFIABLE_SAFETY")
+
+            full_plan = self.test_selector.build_test_plan(
+                selected_identifiers=all_tests,
+                all_repository_tests=all_tests,
+                force_full_suite=True,
+            )
+            plan_result.selected_tests = full_plan.selected_test_identifiers
+            plan_result.selected_test_files = full_plan.selected_test_files
+            plan_result.pytest_command = full_plan.pytest_command_string
+            plan_result.selected_tests_count = full_plan.selected_tests_count
+            plan_result.tests_reduction_pct = 0.0
+            plan_result.estimated_time_saved_sec = 0.0
+            plan_result.plan_id = None
+            plan_result.pipeline_run_id = None

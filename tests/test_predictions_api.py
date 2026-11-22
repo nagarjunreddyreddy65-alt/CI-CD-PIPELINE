@@ -2,7 +2,27 @@
 API tests for Prediction & ML Endpoints.
 """
 
+import tempfile
+
+import pytest
 from fastapi import status
+
+import app.api.routes.predictions as predictions_route
+from app.ml.model_manager import ModelManager
+
+
+@pytest.fixture(autouse=True)
+def isolate_predictions_model_manager():
+    """Isolates model_manager to a temporary directory so training tests do not overwrite repository models."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_mm = ModelManager(registry_dir=temp_dir)
+        temp_mm.train_and_persist(n_samples=40)
+        old_mm = predictions_route.model_manager
+        predictions_route.model_manager = temp_mm
+        try:
+            yield temp_mm
+        finally:
+            predictions_route.model_manager = old_mm
 
 
 def test_predict_endpoint(client):
@@ -30,14 +50,84 @@ def test_predict_endpoint(client):
 
 def test_train_endpoint(client):
     """Tests POST /api/v1/predictions/train triggers model retraining."""
-    payload = {"n_samples": 25}
+    payload = {"n_samples": 25, "data_source": "SYNTHETIC_BOOTSTRAP"}
     response = client.post("/api/v1/predictions/train", json=payload)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
     assert data["success"] is True
     assert data["data"]["status"] == "TRAINED_AND_SAVED"
+    assert data["data"]["provenance"] == "SYNTHETIC_BOOTSTRAP"
+    assert data["data"]["is_production_ready"] is False
     assert data["data"]["samples"] == 25
+
+
+def test_train_endpoint_genuine_telemetry_insufficient_samples(client):
+    """Tests POST /api/v1/predictions/train rejects genuine training when < 15 runs exist."""
+    payload = {"n_samples": 25, "data_source": "GENUINE_PIPELINE_TELEMETRY"}
+    response = client.post("/api/v1/predictions/train", json=payload)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "minimum required is 15" in response.json()["detail"]
+
+
+def test_train_endpoint_genuine_telemetry_success(client, db_session):
+    """Tests POST /api/v1/predictions/train succeeds with real DB features when >= 15 runs exist."""
+    from app.database.models import ChangedFile, Commit, PipelineRun, Repository
+
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    db_session.add(repo)
+    db_session.flush()
+
+    for i in range(25):
+        commit = Commit(
+            repository_id=repo.id,
+            commit_hash=f"train-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@ci.local",
+            message=f"Commit {i}",
+        )
+        db_session.add(commit)
+        db_session.flush()
+        status_val = "FAILED" if i % 3 == 0 else "SUCCESS"
+        lines = 10 if status_val == "SUCCESS" else 80
+        dur = 10.0 + (lines * 0.25) + (5.0 if status_val == "FAILED" else 0.0)
+        cf = ChangedFile(
+            commit_id=commit.id,
+            file_path="sample_app/utils/math_ops.py"
+            if status_val == "SUCCESS"
+            else "sample_app/services/security_service.py",
+            change_type="MODIFIED",
+            lines_added=lines,
+            lines_deleted=2 if status_val == "SUCCESS" else 20,
+            is_sensitive=(status_val == "FAILED"),
+        )
+        db_session.add(cf)
+        run = PipelineRun(
+            repository_id=repo.id,
+            commit_id=commit.id,
+            workflow_name="CI",
+            status=status_val,
+            is_optimized=True,
+            total_duration_sec=dur,
+        )
+        db_session.add(run)
+    db_session.commit()
+
+    payload = {"n_samples": 25, "data_source": "GENUINE_PIPELINE_TELEMETRY"}
+    response = client.post("/api/v1/predictions/train", json=payload)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["success"] is True
+    assert data["data"]["provenance"] == "GENUINE_PIPELINE_TELEMETRY"
+    assert data["data"]["is_production_ready"] is True
+    assert data["data"]["failure_metrics"]["evaluated_on"] == "HOLDOUT_TEST_SPLIT"
+    assert data["data"]["runtime_metrics"]["evaluated_on"] == "HOLDOUT_TEST_SPLIT"
 
 
 def test_get_models_status_endpoint(client):
