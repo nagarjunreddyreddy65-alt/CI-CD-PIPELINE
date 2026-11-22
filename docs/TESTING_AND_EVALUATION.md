@@ -18,8 +18,8 @@ The repository maintains an automated regression and verification suite:
 | Test Suite | Location | Tests Count | Scope | Pass Rate |
 | :--- | :--- | :---: | :--- | :---: |
 | **Sample Target Application** | `tests_sample_app/` | 24 | Unit & regression tests covering `math_ops`, `string_ops`, `metrics_calculator`, `user_service`, `security_service` (Auth), and `payment_processor` (Billing). | **100% (24/24)** |
-| **Autonomous DevOps Core** | `tests/` | 161 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 22 P0/P1 adversarial remediation scenarios, 15 end-to-end scenario evaluations, controlled defect injection, API authentication (constant-time token verification on write & operational read endpoints), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (161/161)** |
-| **Total Automated Test Suite** | Combined | **185** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (185/185)** |
+| **Autonomous DevOps Core** | `tests/` | 181 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 33 P0/P1 adversarial remediation scenarios, 6 master remediation tests, 15 end-to-end scenario evaluations, controlled multi-defect injection, API authentication (constant-time token verification on write & operational read endpoints, role separation), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (181/181)** |
+| **Total Automated Test Suite** | Combined | **205** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (205/205)** |
 
 ### Execution Command:
 ```bash
@@ -63,11 +63,12 @@ The end-to-end benchmark suite (`scripts/benchmark_e2e.py`) evaluates baseline e
 
 ### Empirical Benchmark Summary (`data/e2e_benchmark_report.json`):
 - **Discovered Target Tests:** 24
-- **Baseline Execution Duration (Full Suite):** 1.461s
-- **Optimized Execution Duration (Isolated Change):** 1.289s
-- **Runtime Duration Improvement (Leaf Change):** 0.172s (11.8%)
+- **Baseline Execution Duration (Full Suite, 5 trials):** Median 1.748s (Mean: 1.799s ± 0.26s)
+- **Optimized Execution Duration (Isolated Change, 5 trials):** Median 1.285s (Mean: 1.312s ± 0.062s)
+- **Runtime Duration Improvement (Leaf Change):** 0.463s (26.5% runtime duration reduction)
 - **Test Count Reduction on Isolated Leaf Change:** **62.5%** (9 of 24 tests executed)
-- **Controlled Defect Detection Rate:** **100.0%** (Defect injected into `math_ops.py` immediately caught by selected test subset)
+- **Controlled Multi-Defect Detection Rate:** **100.0%** (3 of 3 injected mutations caught: arithmetic operator, comparison inversion, return mutation)
+- **Codebase Pristine Restoration:** Verified across all 3 defect trials
 - **Safety Policy Compliance Rate:** **100.0%** (15 of 15 evaluated scenarios enforced strictly)
 - **Escaped Defect Rate:** **0.0%** (Empirically verified on targeted defect injection; bounded by deterministic safety rules)
 

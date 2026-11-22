@@ -39,9 +39,20 @@ class TestDependencyMapper:
         self.dep_analyzer = ASTDependencyAnalyzer(root_dir)
 
     def discover_all_test_functions(self, test_dirs: list[str] | None = None) -> list[str]:
-        """Discovers all test function identifiers (e.g. tests_sample_app/test_math.py::test_addition)."""
+        """
+        Discovers all test function and class method identifiers
+        (e.g. tests_sample_app/test_math.py::test_addition or tests/test_foo.py::TestClass::test_method).
+        Handles:
+        - Standalone functions (def test_...)
+        - Async test functions (async def test_...)
+        - Test classes (class Test...: def test_...)
+        - Alternate test naming (test_*.py and *_test.py)
+        - Ignores nested helpers inside test functions.
+        - Deduplicates test identifiers.
+        """
         test_dirs = test_dirs or ["tests", "tests_sample_app"]
         identifiers: list[str] = []
+        seen: set[str] = set()
 
         for folder in test_dirs:
             full_folder = os.path.join(self.root_dir, folder)
@@ -50,20 +61,40 @@ class TestDependencyMapper:
 
             for root, _, files in os.walk(full_folder):
                 for file in files:
-                    if file.startswith("test_") and file.endswith(".py"):
+                    if (file.startswith("test_") or file.endswith("_test.py")) and file.endswith(
+                        ".py"
+                    ):
                         file_path = os.path.join(root, file)
                         rel_path = os.path.relpath(file_path, self.root_dir).replace("\\", "/")
                         try:
                             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                                 tree = ast.parse(f.read(), filename=file_path)
-                            for node in ast.walk(tree):
-                                if isinstance(node, ast.FunctionDef) and node.name.startswith(
-                                    "test_"
+
+                            for node in tree.body:
+                                if isinstance(
+                                    node, (ast.FunctionDef, ast.AsyncFunctionDef)
+                                ) and node.name.startswith("test_"):
+                                    ident = f"{rel_path}::{node.name}"
+                                    if ident not in seen:
+                                        seen.add(ident)
+                                        identifiers.append(ident)
+                                elif isinstance(node, ast.ClassDef) and (
+                                    node.name.startswith("Test")
+                                    or node.name.endswith("Test")
+                                    or node.name.endswith("Tests")
                                 ):
-                                    identifiers.append(f"{rel_path}::{node.name}")
+                                    for class_item in node.body:
+                                        if isinstance(
+                                            class_item, (ast.FunctionDef, ast.AsyncFunctionDef)
+                                        ) and class_item.name.startswith("test_"):
+                                            ident = f"{rel_path}::{node.name}::{class_item.name}"
+                                            if ident not in seen:
+                                                seen.add(ident)
+                                                identifiers.append(ident)
                         except (SyntaxError, OSError, ValueError):
-                            # If file cannot be parsed, add file path itself
-                            identifiers.append(rel_path)
+                            if rel_path not in seen:
+                                seen.add(rel_path)
+                                identifiers.append(rel_path)
 
         return sorted(identifiers)
 
@@ -236,6 +267,22 @@ class TestDependencyMapper:
                 estimated_test_reduction_pct=0.0,
             )
 
+        # Safety Rule 11: Circular or disconnected dependency graph
+        cycles = graph.find_cycles()
+        if cycles:
+            return TestMappingResult(
+                changed_modules=[],
+                affected_modules=[],
+                affected_test_files=[],
+                affected_test_identifiers=all_repo_tests,
+                fallback_required=True,
+                fallback_reason=f"Safety Rule 11: Circular dependency detected in graph: {cycles}",
+                triggered_safety_rules=["RULE_11_CIRCULAR_OR_DISCONNECTED"],
+                total_repository_tests=total_tests,
+                selected_tests_count=total_tests,
+                estimated_test_reduction_pct=0.0,
+            )
+
         # Step 3: Traverse Graph to find affected modules
         changed_modules: list[str] = [
             self.dep_analyzer._file_path_to_module(f) for f in change_result.python_files
@@ -271,7 +318,51 @@ class TestDependencyMapper:
             if any(t_id.startswith(tf) for tf in affected_test_files)
         ]
 
-        # Safety Rule 12 & 13: Empty selected test list when files changed
+        # Safety Rule 12: Changed code has no identified or mapped test cases
+        unmapped_modules: list[str] = []
+        for mod in changed_modules:
+            node_data = graph.graph.nodes.get(mod, {})
+            f_path = node_data.get("file_path", "")
+            rel = os.path.relpath(f_path, self.root_dir).replace("\\", "/") if f_path else ""
+            is_test_file = (
+                rel.startswith(("tests/", "tests_"))
+                or "/tests/" in rel
+                or rel.endswith("_test.py")
+                or os.path.basename(rel).startswith("test_")
+            )
+            if not is_test_file:
+                mod_deps = graph.get_dependents(mod) | {mod}
+                mod_has_test = any(
+                    any(
+                        (
+                            graph.graph.nodes.get(dep, {}).get("file_path", "")
+                            and os.path.relpath(
+                                graph.graph.nodes[dep]["file_path"], self.root_dir
+                            ).replace("\\", "/")
+                            in t
+                        )
+                        for dep in mod_deps
+                    )
+                    for t in all_repo_tests
+                )
+                if not mod_has_test:
+                    unmapped_modules.append(mod)
+
+        if unmapped_modules:
+            return TestMappingResult(
+                changed_modules=changed_modules,
+                affected_modules=sorted(affected_modules),
+                affected_test_files=[],
+                affected_test_identifiers=all_repo_tests,
+                fallback_required=True,
+                fallback_reason=f"Safety Rule 12: Changed code has no identified or mapped test cases for {unmapped_modules}",
+                triggered_safety_rules=["RULE_12_UNMAPPED_TESTS"],
+                total_repository_tests=total_tests,
+                selected_tests_count=total_tests,
+                estimated_test_reduction_pct=0.0,
+            )
+
+        # Safety Rule 13: Empty selected test list when files changed
         if not selected_identifiers and change_result.total_files_changed > 0:
             return TestMappingResult(
                 changed_modules=changed_modules,

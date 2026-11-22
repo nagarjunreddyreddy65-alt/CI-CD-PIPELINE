@@ -123,7 +123,7 @@ In production (`ENVIRONMENT=production`):
 
 All core components, API endpoints, sample application modules, safety rules, ML model loading, and authentication layers are strictly verified:
 
-### 1. Run Complete Test Suite (185 tests, 100% pass rate)
+### 1. Run Complete Test Suite (205 tests, 100% pass rate)
 ```bash
 python -m pytest tests/ tests_sample_app/ -v
 ```
@@ -133,14 +133,14 @@ python -m pytest tests/ tests_sample_app/ -v
 ruff check .
 ruff format --check .
 ```
-*(0 violations across all 93 repository files; 100% formatted)*
+*(0 violations across all 94 repository files; 100% formatted)*
 
 ### 3. Security Auditing (Bandit SAST, pip-audit SCA, Gitleaks)
 ```bash
 bandit -r app sample_app -ll -ii
 pip-audit -r requirements.txt --desc on
 ```
-*(0 security issues identified across 4,633 LOC; 0 dependency vulnerabilities)*
+*(0 High/Medium security issues across 5,762 LOC; 0 dependency vulnerabilities; Gitleaks clean)*
 
 ### 4. End-to-End Benchmarking & Controlled Defect Injection
 ```bash

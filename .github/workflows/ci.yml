@@ -22,6 +22,21 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: devops_user
+          POSTGRES_PASSWORD: devops_password_test_2026
+          POSTGRES_DB: autonomous_devops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -54,16 +69,34 @@ jobs:
           ruff format --check .
 
       - name: Execute Full Test Suite (Pytest with Coverage)
+        env:
+          DATABASE_URL: postgresql://devops_user:devops_password_test_2026@localhost:5432/autonomous_devops_test
         run: |
           python -m pytest tests/ tests_sample_app/ -v --cov=app --cov=sample_app --cov-report=term-missing
 
       - name: Run Baseline Telemetry & Benchmark
+        env:
+          DATABASE_URL: postgresql://devops_user:devops_password_test_2026@localhost:5432/autonomous_devops_test
         run: |
           python scripts/benchmark_baseline.py
 
       - name: Run End-to-End Optimization Benchmark
+        env:
+          DATABASE_URL: postgresql://devops_user:devops_password_test_2026@localhost:5432/autonomous_devops_test
         run: |
           python scripts/benchmark_e2e.py
+
+      - name: Verify Live CI Optimization Runner Integration
+        env:
+          OPTIMIZATION_API_URL: http://127.0.0.1:8000
+          RUNNER_API_KEY: autonomous_devops_runner_dev_api_key_2026
+          DATABASE_URL: postgresql://devops_user:devops_password_test_2026@localhost:5432/autonomous_devops_test
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          BACKEND_PID=$!
+          sleep 4
+          python scripts/run_optimized_ci.py --api-url http://127.0.0.1:8000 --force-full
+          kill $BACKEND_PID || true
 
       - name: Static Security Analysis (Bandit SAST)
         run: |

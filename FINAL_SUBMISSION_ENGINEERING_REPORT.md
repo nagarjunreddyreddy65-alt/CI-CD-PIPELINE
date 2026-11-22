@@ -183,8 +183,8 @@ $$X = [f_{\text{files\_changed}}, f_{\text{lines\_added}}, f_{\text{lines\_delet
 ## 6. Comprehensive Automated Test Suite Verification
 
 ```text
-======================= 199 passed in 25.25s =======================
-Pass Rate: 100.0% (199 / 199)
+======================= 205 passed in 34.40s =======================
+Pass Rate: 100.0% (205 / 205)
 ```
 
 ### Breakdown of Test Modules:
@@ -195,7 +195,8 @@ Pass Rate: 100.0% (199 / 199)
   - `test_security_service.py` (5)
   - `test_string_ops.py` (3)
   - `test_user_service.py` (4)
-- `tests/` (175 tests):
+- `tests/` (181 tests):
+  - `test_master_remediation.py` (6 tests covering immutable dataset tamper defense, feature hash binding, holdout certification failure modes, single-class holdout rejection, graph cycle detection Rule 11, and dynamic import detector aliasing)
   - `test_remediation_p0_p1.py` (33 tests covering model loading, provenance trust boundary, HMAC-SHA256 sealing, read-only array immutability, tamper detection, holdout certification failure on zero-failure holdout, too few failures rejection, undefined ROC-AUC rejection, synthetic array rejection, metadata corruption, SHA-256 integrity verification, leakage prevention, server historical verification, DB fail-closed, fail-fast production startup, and endpoint protection)
   - `test_safety_policy.py` (25 tests covering all 21 fallback rules)
   - `test_scenarios_e2e.py` (16 end-to-end scenarios)
@@ -218,6 +219,8 @@ Pass Rate: 100.0% (199 / 199)
   - `test_anomaly_detector.py` (4 tests)
   - `test_event_correlator.py` (2 tests)
   - `test_telemetry.py` (3 tests)
+  - `test_security_scanners.py` (5 tests)
+  - `test_security_telemetry_api.py` (6 tests)
   - `test_security_scanners.py` (5 tests)
   - `test_security_telemetry_api.py` (6 tests)
 
@@ -245,19 +248,20 @@ Pass Rate: 100.0% (199 / 199)
 
 ## 8. Empirical Benchmark & Controlled Defect Injection
 
-Measured via `scripts/benchmark_e2e.py`:
+Measured via `scripts/benchmark_e2e.py` (5-trial repetitions):
 - **Discovered Target Tests:** 24
-- **Baseline Full-Suite Execution Duration:** 1.167s
-- **Optimized Execution Duration (Leaf Change):** 1.067s
-- **Duration Saved on Leaf Change:** 0.100s (8.6% runtime reduction)
+- **Baseline Full-Suite Execution Duration (5 trials):** Median 1.748s (Mean: 1.799s ± 0.26s)
+- **Optimized Execution Duration (Leaf Change, 5 trials):** Median 1.285s (Mean: 1.312s ± 0.062s)
+- **Duration Saved on Leaf Change:** 0.463s (26.5% runtime reduction)
 - **Test Count Reduction on Leaf Change:** **62.5%** (9 of 24 tests executed)
-- **Controlled Defect Detection Rate:** **100.0%** (Injected arithmetic mutation in `math_ops.py` immediately detected by selected tests)
+- **Controlled Defect Detection Rate:** **100.0%** (3/3 multi-defect mutations caught: arithmetic operator mutation `a + b + 9999`, comparison inversion `b != 0`, and return value mutation `return 0`)
+- **Codebase Pristine Restoration:** Verified across all 3 defect trials
 - **Safety Policy Compliance Rate:** **100.0%** (15 of 15 evaluated scenarios enforced strictly)
 - **Escaped Defect Rate:** **0.0%** (Empirically verified on targeted defect injection; bounded by deterministic fallback rules)
 
 > [!IMPORTANT]
 > **Distinction Between Test-Count Reduction and Measured Runtime Savings:**
-> On the benchmark's isolated leaf change, the test selector achieved a **62.5% test-count reduction** (executing 9 target tests instead of all 24). The measured wall-clock runtime reduction was **8.6%** (0.100s savings, decreasing from 1.167s to 1.067s). In a lightweight, sub-second test suite, constant process invocation and pytest framework bootstrap overhead account for the majority of wall-clock time. In enterprise CI/CD suites running for tens of minutes, a 62.5% test-count reduction scales directly into proportional compute and wall-clock savings.
+> On the benchmark's isolated leaf change, the test selector achieved a **62.5% test-count reduction** (executing 9 target tests instead of all 24). The measured wall-clock runtime reduction was **26.5%** (0.463s savings, decreasing from 1.748s to 1.285s median duration across 5 trials). In a lightweight, sub-second test suite, constant process invocation and pytest framework bootstrap overhead account for a proportion of wall-clock time. In enterprise CI/CD suites running for tens of minutes, a 62.5% test-count reduction scales directly into proportional compute and wall-clock savings.
 
 ---
 

@@ -44,9 +44,33 @@ def analyze_diff(
     _authorized: bool = Depends(verify_runner_token),
 ):
     """Analyzes commit diff and maps downstream test dependencies."""
-    root_dir = os.path.abspath(payload.repository_path or ".")
-    if not os.path.exists(root_dir) or not os.path.isdir(root_dir):
-        root_dir = os.getcwd()
+    repo_input = payload.repository_path or "."
+    clean_repo = os.path.normpath(repo_input).replace("\\", "/")
+    if (
+        os.path.isabs(repo_input)
+        or clean_repo.startswith(("../", "..", "//", "\\\\"))
+        or "/../" in clean_repo
+        or bool(len(clean_repo) > 1 and clean_repo[1] == ":")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid repository path: path traversal or absolute/drive/UNC path is forbidden ('{payload.repository_path}')",
+        )
+
+    approved_root = os.path.abspath(os.getcwd())
+    candidate_dir = os.path.abspath(os.path.join(approved_root, clean_repo))
+    real_candidate = os.path.realpath(candidate_dir)
+    real_approved = os.path.realpath(approved_root)
+    try:
+        if os.path.commonpath([real_approved, real_candidate]) != real_approved:
+            raise ValueError("Boundary escape")
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid repository path: path escapes approved workspace boundary",
+        )
+
+    root_dir = real_candidate
 
     # Reject path traversal attempts in file paths
     for f in payload.files:

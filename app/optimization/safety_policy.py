@@ -202,6 +202,7 @@ class SafetyContext:
     model_artifact_exists: bool = True
     model_version_compatible: bool = True
     predicted_probability: float | None = 0.05
+    predicted_duration: float | None = 30.0
     prediction_confidence: float = 0.95
     historical_runs_count: int = 20
 
@@ -307,13 +308,21 @@ class SafetyPolicyEvaluator:
         if not context.model_version_compatible:
             triggers.append(self._create_trigger(SafetyRuleCode.RULE_15_MODEL_VERSION_MISMATCH))
 
-        # Rule 16: Invalid prediction output (None, NaN, Inf, or outside [0.0, 1.0])
+        # Rule 16: Invalid prediction output (None, NaN, Inf, or outside bounds)
         prob = context.predicted_probability
+        dur = context.predicted_duration
         if prob is None or math.isnan(prob) or math.isinf(prob) or not (0.0 <= prob <= 1.0):
             triggers.append(
                 self._create_trigger(
                     SafetyRuleCode.RULE_16_INVALID_PREDICTION_OUTPUT,
                     details=f"Invalid probability value: {prob}",
+                )
+            )
+        elif dur is not None and (math.isnan(dur) or math.isinf(dur) or dur < 0.0):
+            triggers.append(
+                self._create_trigger(
+                    SafetyRuleCode.RULE_16_INVALID_PREDICTION_OUTPUT,
+                    details=f"Invalid duration value: {dur}",
                 )
             )
 
@@ -327,11 +336,18 @@ class SafetyPolicyEvaluator:
             )
 
         # Rule 18: Low prediction confidence
-        if context.prediction_confidence < self.CONFIDENCE_THRESHOLD:
+        conf = context.prediction_confidence
+        if (
+            conf is None
+            or math.isnan(conf)
+            or math.isinf(conf)
+            or not (0.0 <= conf <= 1.0)
+            or conf < self.CONFIDENCE_THRESHOLD
+        ):
             triggers.append(
                 self._create_trigger(
                     SafetyRuleCode.RULE_18_LOW_PREDICTION_CONFIDENCE,
-                    details=f"Confidence ({context.prediction_confidence:.2f}) < threshold ({self.CONFIDENCE_THRESHOLD:.2f})",
+                    details=f"Confidence ({conf}) < threshold ({self.CONFIDENCE_THRESHOLD:.2f})",
                 )
             )
 

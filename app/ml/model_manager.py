@@ -623,6 +623,21 @@ class ModelManager:
                 raise ValueError(
                     f"Training dataset size ({len(training_data)}) is less than required minimum ({settings.MIN_TRAINING_RUNS})."
                 )
+            if len(training_data) > genuine_historical_runs_count:
+                raise ValueError(
+                    f"Inconsistent provenance: dataset sample count ({len(training_data)}) exceeds genuine runs count ({genuine_historical_runs_count})."
+                )
+            if len(set(training_data.run_ids)) != len(training_data.run_ids):
+                raise ValueError("Duplicate run IDs detected in telemetry dataset.")
+            if not np.all(np.isfinite(training_data.X)):
+                raise ValueError("Non-finite values (NaN or Inf) detected in feature matrix.")
+            if not np.all(np.isfinite(training_data.y_time)):
+                raise ValueError("Non-finite values (NaN or Inf) detected in duration targets.")
+            if not set(np.unique(training_data.y_fail)).issubset({0, 1}):
+                raise ValueError("Invalid failure labels: targets must be binary 0 or 1.")
+            if not np.all(training_data.y_time > 0.0):
+                raise ValueError("Invalid duration values: durations must be strictly positive.")
+
             X, y_fail, y_time = training_data.X, training_data.y_fail, training_data.y_time
             telemetry_provenance_hash = training_data.provenance_hash
         elif data_source == "SYNTHETIC_BOOTSTRAP":
@@ -730,6 +745,80 @@ class ModelManager:
                 "metadata": self.metadata_path,
             },
         }
+
+    def train_from_database(
+        self,
+        db: Any,
+        min_runs: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Trusted database-derived model training pipeline.
+        Obtains completed records directly through a controlled SQLAlchemy database session,
+        validates database entity integrity, extracts genuine pre-execution features,
+        and trains and certifies predictive models.
+        """
+        required_min = min_runs or settings.MIN_TRAINING_RUNS
+        from app.database.models import PipelineRun
+
+        completed_runs = (
+            db.query(PipelineRun).filter(PipelineRun.status.in_(["SUCCESS", "FAILED"])).all()
+        )
+        genuine_count = len(completed_runs)
+        if genuine_count < required_min:
+            raise ValueError(
+                f"Cannot train production model with genuine telemetry: found only {genuine_count} "
+                f"historical runs in database (minimum required is {required_min})."
+            )
+
+        # Validate database entity integrity
+        run_ids = [getattr(r, "id", None) for r in completed_runs]
+        if any(rid is None for rid in run_ids):
+            raise ValueError("Corrupted database records: pipeline runs contain null IDs.")
+        if len(set(run_ids)) != len(run_ids):
+            raise ValueError("Corrupted database records: duplicate pipeline run IDs detected.")
+
+        telemetry_dataset = self.extract_features_from_db_runs(completed_runs)
+        return self.train_and_persist(
+            n_samples=len(telemetry_dataset),
+            data_source="GENUINE_PIPELINE_TELEMETRY",
+            genuine_historical_runs_count=genuine_count,
+            training_data=telemetry_dataset,
+            verified_db_source=True,
+        )
+
+    def is_version_compatible(self) -> tuple[bool, str]:
+        """
+        Validates that in-memory models and persisted metadata adhere to the expected
+        model version and feature schema (Safety Rule 15).
+        """
+        expected_version = "v1.0.0"
+        if self.failure_predictor.model_version != expected_version:
+            return (
+                False,
+                f"Safety Rule 15: Failure predictor version mismatch ({self.failure_predictor.model_version} != {expected_version})",
+            )
+        if self.runtime_predictor.model_version != expected_version:
+            return (
+                False,
+                f"Safety Rule 15: Runtime predictor version mismatch ({self.runtime_predictor.model_version} != {expected_version})",
+            )
+
+        if not os.path.exists(self.metadata_path):
+            return False, "Safety Rule 15: Model metadata missing or unreadable on disk"
+
+        try:
+            with open(self.metadata_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            meta_ver = meta.get("model_version")
+            if meta_ver and meta_ver != expected_version:
+                return (
+                    False,
+                    f"Safety Rule 15: Model metadata version mismatch ({meta_ver} != {expected_version})",
+                )
+        except (OSError, json.JSONDecodeError):
+            return False, "Safety Rule 15: Model metadata unreadable for version validation"
+
+        return True, "Model versions compatible."
 
     def can_predict(self, genuine_historical_runs_count: int) -> tuple[bool, str]:
         """

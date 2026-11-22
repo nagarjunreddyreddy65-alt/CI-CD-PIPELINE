@@ -9,8 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import verify_runner_token
-from app.database.models import PipelineRun
+from app.core.security import verify_admin_token, verify_runner_token
 from app.database.session import get_db
 from app.ml.feature_extractor import FeatureExtractor
 from app.ml.model_manager import ModelManager
@@ -96,28 +95,23 @@ def predict_pipeline(
 def train_models(
     payload: TrainRequest,
     db: Session = Depends(get_db),
-    _authorized: bool = Depends(verify_runner_token),
+    _authorized: bool = Depends(verify_admin_token),
 ):
-    """Trains and serializes both predictive models."""
+    """Trains and serializes both predictive models with role separation and strict provenance."""
+    if payload.data_source not in ("GENUINE_PIPELINE_TELEMETRY", "SYNTHETIC_BOOTSTRAP"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Invalid data_source '{payload.data_source}'. "
+                "Must be 'GENUINE_PIPELINE_TELEMETRY' or 'SYNTHETIC_BOOTSTRAP'."
+            ),
+        )
+
     try:
         if payload.data_source == "GENUINE_PIPELINE_TELEMETRY":
-            runs = db.query(PipelineRun).filter(PipelineRun.status.in_(["SUCCESS", "FAILED"])).all()
-            genuine_count = len(runs)
-            if genuine_count < settings.MIN_TRAINING_RUNS:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Cannot train production model with genuine telemetry: found only {genuine_count} "
-                        f"historical runs in database (minimum required is {settings.MIN_TRAINING_RUNS})."
-                    ),
-                )
-            telemetry_data = model_manager.extract_features_from_db_runs(runs)
-            result = model_manager.train_and_persist(
-                n_samples=len(telemetry_data),
-                data_source="GENUINE_PIPELINE_TELEMETRY",
-                genuine_historical_runs_count=genuine_count,
-                training_data=telemetry_data,
-                verified_db_source=True,
+            result = model_manager.train_from_database(
+                db=db,
+                min_runs=settings.MIN_TRAINING_RUNS,
             )
         else:
             result = model_manager.train_and_persist(
@@ -131,7 +125,12 @@ def train_models(
         }
     except HTTPException:
         raise
-    except (ValueError, OSError, RuntimeError) as e:
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except (OSError, RuntimeError) as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Model training failed: {e!s}",

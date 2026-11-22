@@ -32,9 +32,10 @@ def trained_model_manager(tmp_path):
 
     manager = ModelManager(registry_dir=str(tmp_path))
     runs = []
-    for i in range(35):
+    for i in range(40):
         is_fail = i % 5 == 0
-        dur = 12.0 + (6.0 if is_fail else 0.0) + (i * 0.4)
+        lines = 50 if is_fail else 8
+        dur = 25.0 if is_fail else 12.0
         r = PipelineRun(
             id=f"fixture-run-{i:03d}",
             status="FAILED" if is_fail else "SUCCESS",
@@ -44,10 +45,10 @@ def trained_model_manager(tmp_path):
         cf = ChangedFile(
             file_path="sample_app/utils/math_ops.py"
             if not is_fail
-            else "sample_app/services/security_service.py",
+            else "sample_app/auth/security_service.py",
             change_type="MODIFIED",
-            lines_added=10 if not is_fail else 80,
-            lines_deleted=2 if not is_fail else 20,
+            lines_added=lines,
+            lines_deleted=1,
             is_sensitive=is_fail,
         )
         c.changed_files = [cf]
@@ -57,7 +58,7 @@ def trained_model_manager(tmp_path):
     manager.train_and_persist(
         n_samples=len(telemetry),
         data_source="GENUINE_PIPELINE_TELEMETRY",
-        genuine_historical_runs_count=35,
+        genuine_historical_runs_count=40,
         training_data=telemetry,
         verified_db_source=True,
     )

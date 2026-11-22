@@ -45,6 +45,10 @@ class Settings(BaseSettings):
         default=INSECURE_DEFAULT_RUNNER_KEY,
         description="Pre-shared key used by isolated GitHub Actions runners",
     )
+    ADMIN_API_KEY: str | None = Field(
+        default=None,
+        description="Pre-shared key for privileged administrative operations (defaults to RUNNER_API_KEY if unset)",
+    )
     GITHUB_WEBHOOK_SECRET: str | None = "autonomous_devops_webhook_dev_secret"
 
     # Database configuration
@@ -94,6 +98,8 @@ class Settings(BaseSettings):
         """
         if self.ENVIRONMENT == "production":
             errors: list[str] = []
+            if self.DEBUG:
+                errors.append("DEBUG mode must be disabled (DEBUG=False) in production.")
             if self.SECRET_KEY == INSECURE_DEFAULT_SECRET_KEY or len(self.SECRET_KEY) < 32:
                 errors.append(
                     "SECRET_KEY must be overridden with a strong secret (min 32 chars) in production. "
@@ -102,6 +108,13 @@ class Settings(BaseSettings):
             if self.RUNNER_API_KEY == INSECURE_DEFAULT_RUNNER_KEY or len(self.RUNNER_API_KEY) < 16:
                 errors.append(
                     "RUNNER_API_KEY must be overridden with a strong pre-shared key (min 16 chars) in production."
+                )
+            if (
+                not self.GITHUB_WEBHOOK_SECRET
+                or self.GITHUB_WEBHOOK_SECRET == "autonomous_devops_webhook_dev_secret"
+            ):
+                errors.append(
+                    "GITHUB_WEBHOOK_SECRET must be configured with a strong secret in production."
                 )
             if INSECURE_DEFAULT_POSTGRES_PWD in self.DATABASE_URL:
                 errors.append(

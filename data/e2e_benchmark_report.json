@@ -1,25 +1,45 @@
 {
-  "benchmark_timestamp": "2026-11-22 14:43:39Z",
+  "benchmark_timestamp": "2026-11-22 17:35:14Z",
   "total_available_target_tests": 24,
   "scenarios": {
     "baseline_full_suite": {
-      "duration_sec": 1.167,
+      "duration_sec": 1.748,
       "exit_code": 0,
-      "cpu_percent": 32.1,
-      "memory_mb": 11821.9,
+      "cpu_percent": 23.2,
+      "memory_mb": 12097.7,
       "status": "PASSED",
-      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.23s ==============================\n",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.29s ==============================\n",
+      "duration_mean_sec": 1.799,
+      "duration_median_sec": 1.748,
+      "duration_stdev_sec": 0.26,
+      "trials_durations": [
+        1.848,
+        2.212,
+        1.748,
+        1.524,
+        1.662
+      ],
       "tests_executed": 24,
       "decision": "FULL_SUITE_BASELINE",
       "reduction_pct": 0.0
     },
     "optimized_math_change": {
-      "duration_sec": 1.067,
+      "duration_sec": 1.285,
       "exit_code": 0,
-      "cpu_percent": 7.0,
-      "memory_mb": 11818.5,
+      "cpu_percent": 9.7,
+      "memory_mb": 12126.8,
       "status": "PASSED",
-      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.06s ==============================\n",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.08s ==============================\n",
+      "duration_mean_sec": 1.312,
+      "duration_median_sec": 1.285,
+      "duration_stdev_sec": 0.062,
+      "trials_durations": [
+        1.383,
+        1.374,
+        1.285,
+        1.245,
+        1.273
+      ],
       "tests_executed": 9,
       "decision": "OPTIMIZED",
       "reduction_pct": 62.5,
@@ -28,13 +48,33 @@
   },
   "defect_injection_experiment": {
     "target_file": "sample_app/utils/math_ops.py",
-    "mutation_type": "Arithmetic operator defect ('return a + b' -> 'return a + b + 9999')",
-    "tests_executed_count": 9,
-    "defect_detected": true,
-    "mutation_exit_code": 1,
-    "defect_output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconf",
+    "total_defect_trials": 3,
+    "all_defects_detected": true,
+    "trials": [
+      {
+        "defect_id": "defect_1_arithmetic",
+        "mutation_name": "Arithmetic operator defect ('return a + b' -> 'return a + b + 9999')",
+        "defect_detected": true,
+        "exit_code": 1,
+        "output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C"
+      },
+      {
+        "defect_id": "defect_2_comparison",
+        "mutation_name": "Comparison inversion defect ('if b == 0:' -> 'if b != 0:')",
+        "defect_detected": true,
+        "exit_code": 1,
+        "output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C"
+      },
+      {
+        "defect_id": "defect_3_return_mutation",
+        "mutation_name": "Return value mutation defect ('return a - b' -> 'return 0')",
+        "defect_detected": true,
+        "exit_code": 1,
+        "output_sample": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C"
+      }
+    ],
     "restoration_verified": true,
-    "status": "DEFECT_DETECTED"
+    "status": "ALL_DEFECTS_DETECTED"
   },
   "evaluated_scenarios": [
     {
@@ -205,10 +245,10 @@
   ],
   "all_15_scenarios_passed": true,
   "summary": {
-    "baseline_duration_sec": 1.167,
-    "optimized_duration_sec": 1.067,
-    "runtime_savings_sec": 0.1,
-    "runtime_savings_pct": 8.6,
+    "baseline_duration_sec": 1.748,
+    "optimized_duration_sec": 1.285,
+    "runtime_savings_sec": 0.463,
+    "runtime_savings_pct": 26.5,
     "test_count_reduction_pct_on_leaf": 62.5,
     "safety_policy_compliance_rate_pct": 100.0,
     "total_scenarios_evaluated": 15,

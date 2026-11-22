@@ -13,6 +13,7 @@ and deterministic safety compliance.
 
 import json
 import os
+import statistics
 import subprocess
 import sys
 import time
@@ -81,27 +82,47 @@ def execute_e2e_benchmark() -> dict[str, Any]:
     }
 
     # =========================================================================
-    # Part 1: Baseline Full Suite Execution
+    # Part 1: Baseline Full Suite Execution (Multi-Trial Repetitions)
     # =========================================================================
-    print("\n[Phase 1] Running Full-Suite Baseline Execution...")
-    baseline_run = run_pytest_command(["tests_sample_app/", "-p", "no:httpbin", "-q"])
-    if baseline_run["exit_code"] != 0:
-        raise RuntimeError(
-            f"Baseline test execution failed with exit code {baseline_run['exit_code']}"
-        )
+    NUM_TRIALS = 5
+    print(f"\n[Phase 1] Running Full-Suite Baseline Execution ({NUM_TRIALS} trials)...")
+    baseline_trials = []
+    for t_idx in range(NUM_TRIALS):
+        trial_run = run_pytest_command(["tests_sample_app/", "-p", "no:httpbin", "-q"])
+        if trial_run["exit_code"] != 0:
+            raise RuntimeError(
+                f"Baseline test trial {t_idx + 1} failed with exit code {trial_run['exit_code']}"
+            )
+        baseline_trials.append(trial_run)
 
+    baseline_durations = [t["duration_sec"] for t in baseline_trials]
+    mean_baseline = round(statistics.mean(baseline_durations), 3)
+    median_baseline = round(statistics.median(baseline_durations), 3)
+    stdev_baseline = (
+        round(statistics.stdev(baseline_durations), 3) if len(baseline_durations) > 1 else 0.0
+    )
+
+    baseline_run = baseline_trials[0]
+    baseline_run["duration_sec"] = median_baseline
+    baseline_run["duration_mean_sec"] = mean_baseline
+    baseline_run["duration_median_sec"] = median_baseline
+    baseline_run["duration_stdev_sec"] = stdev_baseline
+    baseline_run["trials_durations"] = baseline_durations
     baseline_run["tests_executed"] = total_sample_tests
     baseline_run["decision"] = "FULL_SUITE_BASELINE"
     baseline_run["reduction_pct"] = 0.0
     results["scenarios"]["baseline_full_suite"] = baseline_run
     print(
-        f"  ⏱ Duration: {baseline_run['duration_sec']}s | Tests: {total_sample_tests} | Status: {baseline_run['status']}"
+        f"  ⏱ Median Duration: {median_baseline}s (Mean: {mean_baseline}s ± {stdev_baseline}s) | "
+        f"Tests: {total_sample_tests} | Status: {baseline_run['status']}"
     )
 
     # =========================================================================
-    # Part 2: Optimized Leaf Change (Math Operations)
+    # Part 2: Optimized Leaf Change (Math Operations, Multi-Trial Repetitions)
     # =========================================================================
-    print("\n[Phase 2] Evaluating Isolated Non-Sensitive Change (sample_app/utils/math_ops.py)...")
+    print(
+        f"\n[Phase 2] Evaluating Isolated Non-Sensitive Change (sample_app/utils/math_ops.py, {NUM_TRIALS} trials)..."
+    )
     math_change = [
         {
             "file_path": "sample_app/utils/math_ops.py",
@@ -127,73 +148,120 @@ def execute_e2e_benchmark() -> dict[str, Any]:
         ((total_sample_tests - selected_count) / max(1, total_sample_tests)) * 100.0, 1
     )
 
-    opt_run = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
-    if opt_run["exit_code"] != 0:
-        raise RuntimeError(f"Optimized test subset failed with exit code {opt_run['exit_code']}")
+    opt_trials = []
+    for t_idx in range(NUM_TRIALS):
+        trial_run = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
+        if trial_run["exit_code"] != 0:
+            raise RuntimeError(
+                f"Optimized test subset trial {t_idx + 1} failed with exit code {trial_run['exit_code']}"
+            )
+        opt_trials.append(trial_run)
 
+    opt_durations = [t["duration_sec"] for t in opt_trials]
+    mean_opt = round(statistics.mean(opt_durations), 3)
+    median_opt = round(statistics.median(opt_durations), 3)
+    stdev_opt = round(statistics.stdev(opt_durations), 3) if len(opt_durations) > 1 else 0.0
+
+    opt_run = opt_trials[0]
+    opt_run["duration_sec"] = median_opt
+    opt_run["duration_mean_sec"] = mean_opt
+    opt_run["duration_median_sec"] = median_opt
+    opt_run["duration_stdev_sec"] = stdev_opt
+    opt_run["trials_durations"] = opt_durations
     opt_run["tests_executed"] = selected_count
     opt_run["decision"] = "OPTIMIZED"
     opt_run["reduction_pct"] = reduction
     opt_run["fallback_triggered"] = opt_plan.fallback_triggered
     results["scenarios"]["optimized_math_change"] = opt_run
     print(
-        f"  ⏱ Duration: {opt_run['duration_sec']}s | Tests: {selected_count}/{total_sample_tests} ({reduction}% reduction)"
+        f"  ⏱ Median Duration: {median_opt}s (Mean: {mean_opt}s ± {stdev_opt}s) | "
+        f"Tests: {selected_count}/{total_sample_tests} ({reduction}% reduction)"
     )
 
     # =========================================================================
-    # Part 3: Controlled Defect-Injection Experiment
+    # Part 3: Controlled Multi-Defect Injection Experiments
     # =========================================================================
-    print("\n[Phase 3] Running Controlled Defect-Injection Experiment...")
+    print("\n[Phase 3] Running Controlled Multi-Defect Injection Experiments...")
     math_file_path = os.path.join(root_dir, "sample_app", "utils", "math_ops.py")
     with open(math_file_path, "r", encoding="utf-8") as f:
         original_code = f.read()
 
-    # Mutate add(a, b) to introduce an intentional mathematical flaw: return a + b + 9999
-    mutated_code = original_code.replace("return a + b", "return a + b + 9999")
-    if mutated_code == original_code:
-        raise RuntimeError(
-            "Defect injection mutation failed: Target pattern 'return a + b' not found."
-        )
+    mutations = [
+        {
+            "id": "defect_1_arithmetic",
+            "name": "Arithmetic operator defect ('return a + b' -> 'return a + b + 9999')",
+            "target": "return a + b",
+            "replacement": "return a + b + 9999",
+        },
+        {
+            "id": "defect_2_comparison",
+            "name": "Comparison inversion defect ('if b == 0:' -> 'if b != 0:')",
+            "target": "if b == 0:",
+            "replacement": "if b != 0:",
+        },
+        {
+            "id": "defect_3_return_mutation",
+            "name": "Return value mutation defect ('return a - b' -> 'return 0')",
+            "target": "return a - b",
+            "replacement": "return 0",
+        },
+    ]
 
-    defect_detected = False
-    defect_exit_code = 0
-    defect_stdout_snippet = ""
+    mutation_trial_results = []
+    all_defects_detected = True
+
     try:
-        with open(math_file_path, "w", encoding="utf-8") as f:
-            f.write(mutated_code)
+        for mut in mutations:
+            if mut["target"] not in original_code:
+                raise RuntimeError(
+                    f"Defect injection failed: target pattern '{mut['target']}' not found in math_ops.py"
+                )
 
-        # Run the optimized test subset on the mutated codebase
-        mutation_run = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
-        defect_exit_code = mutation_run["exit_code"]
-        defect_stdout_snippet = mutation_run["output"][:200]
-        defect_detected = defect_exit_code != 0
+            mutated_code = original_code.replace(mut["target"], mut["replacement"], 1)
+            with open(math_file_path, "w", encoding="utf-8") as f:
+                f.write(mutated_code)
+
+            try:
+                mut_run = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
+                defect_caught = mut_run["exit_code"] != 0
+                all_defects_detected = all_defects_detected and defect_caught
+                mutation_trial_results.append(
+                    {
+                        "defect_id": mut["id"],
+                        "mutation_name": mut["name"],
+                        "defect_detected": defect_caught,
+                        "exit_code": mut_run["exit_code"],
+                        "output_sample": mut_run["output"][:150].strip(),
+                    }
+                )
+                print(
+                    f"  🎯 [{mut['id']}] {mut['name']}: {'CAUGHT (Test Failure Confirmed)' if defect_caught else 'ESCAPED'}"
+                )
+            finally:
+                # Guarantee restoration after each trial
+                with open(math_file_path, "w", encoding="utf-8") as f:
+                    f.write(original_code)
+
+            # Verify restoration after each trial
+            verify_restore = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
+            if verify_restore["exit_code"] != 0:
+                raise RuntimeError(
+                    f"Pristine codebase restoration failed after mutation {mut['id']}!"
+                )
     finally:
-        # Guarantee restoration of the pristine original file
         with open(math_file_path, "w", encoding="utf-8") as f:
             f.write(original_code)
 
-    # Verify restoration
-    verify_restored = run_pytest_command(selected_tests + ["-p", "no:httpbin", "-q"])
-    if verify_restored["exit_code"] != 0:
-        raise RuntimeError(
-            "Codebase restoration verification failed: Tests still failing after cleanup!"
-        )
-
     results["defect_injection_experiment"] = {
         "target_file": "sample_app/utils/math_ops.py",
-        "mutation_type": "Arithmetic operator defect ('return a + b' -> 'return a + b + 9999')",
-        "tests_executed_count": selected_count,
-        "defect_detected": defect_detected,
-        "mutation_exit_code": defect_exit_code,
-        "defect_output_sample": defect_stdout_snippet.strip(),
-        "restoration_verified": verify_restored["exit_code"] == 0,
-        "status": "DEFECT_DETECTED" if defect_detected else "DEFECT_ESCAPED",
+        "total_defect_trials": len(mutations),
+        "all_defects_detected": all_defects_detected,
+        "trials": mutation_trial_results,
+        "restoration_verified": True,
+        "status": "ALL_DEFECTS_DETECTED" if all_defects_detected else "DEFECT_ESCAPED",
     }
     print(
-        f"  🎯 Defect Injection Result: {'CAUGHT (Test Failure Confirmed)' if defect_detected else 'ESCAPED'}"
-    )
-    print(
-        f"  🔄 Codebase Pristine Restoration: Verified (exit code {verify_restored['exit_code']})"
+        f"  🔄 Codebase Pristine Restoration: Verified across all {len(mutations)} defect injection trials."
     )
 
     # =========================================================================
@@ -364,7 +432,7 @@ def execute_e2e_benchmark() -> dict[str, Any]:
         "safety_policy_compliance_rate_pct": safety_compliance_pct,
         "total_scenarios_evaluated": len(evaluated_scenarios),
         "total_scenarios_passed": sum(1 for s in evaluated_scenarios if s["passed"]),
-        "controlled_defect_detection_rate_pct": 100.0 if defect_detected else 0.0,
+        "controlled_defect_detection_rate_pct": 100.0 if all_defects_detected else 0.0,
         "escaped_defects_rate": "0.0% (Empirically verified on targeted defect injection; bounded by deterministic safety rules)",
         "active_safety_rules_count": 21,
     }

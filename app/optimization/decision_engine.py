@@ -269,6 +269,16 @@ class DecisionEngine:
             len(selected_candidate_tests) == 0 and change_res.total_changed_files > 0
         )
 
+        model_ver_ok, model_ver_reason = self.model_manager.is_version_compatible()
+
+        fallback_custom_reason = (
+            mapping_res.fallback_reason
+            if mapping_res.fallback_required
+            else (None if can_pred else can_pred_reason)
+        )
+        if not model_ver_ok and not fallback_custom_reason:
+            fallback_custom_reason = f"Safety Rule 15: {model_ver_reason}"
+
         safety_ctx = SafetyContext(
             has_migration_changes=change_res.has_migration_changes,
             has_auth_changes=change_res.has_auth_changes,
@@ -285,16 +295,15 @@ class DecisionEngine:
             is_test_selection_empty=is_empty_selection,
             non_empty_code_change=(change_res.total_changed_files > 0),
             model_artifact_exists=model_artifacts_exist,
-            model_version_compatible=True,
+            model_version_compatible=model_ver_ok,
             predicted_probability=fail_prob,
+            predicted_duration=pred_duration,
             prediction_confidence=confidence,
             historical_runs_count=effective_historical_runs,
             api_reachable=True,
             github_api_success=True,
             unverifiable_safety_detected=False,
-            custom_fallback_reason=mapping_res.fallback_reason
-            if mapping_res.fallback_required
-            else (None if can_pred else can_pred_reason),
+            custom_fallback_reason=fallback_custom_reason,
         )
 
         safety_res: SafetyEvaluationResult = self.safety_evaluator.evaluate(safety_ctx)

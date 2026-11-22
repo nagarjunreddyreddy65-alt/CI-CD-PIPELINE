@@ -31,12 +31,15 @@ def test_production_configuration_accepts_valid_strong_secrets():
     """Verifies that running in production with valid strong secrets passes validation."""
     prod_settings = Settings(
         ENVIRONMENT="production",
+        DEBUG=False,
         SECRET_KEY="a" * 32,
         RUNNER_API_KEY="b" * 20,
+        GITHUB_WEBHOOK_SECRET="c" * 32,
         DATABASE_URL="postgresql+psycopg2://custom_user:strong_prod_password_999@db:5432/prod_db",
         USE_SQLITE_FALLBACK=False,
     )
     assert prod_settings.ENVIRONMENT == "production"
+    assert prod_settings.DEBUG is False
     assert prod_settings.USE_SQLITE_FALLBACK is False
 
 

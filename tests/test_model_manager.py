@@ -85,9 +85,10 @@ def test_provenance_and_can_predict_rule_17(temp_manager):
     from app.database.models import ChangedFile, Commit, PipelineRun
 
     runs = []
-    for i in range(25):
-        is_fail = i % 4 == 0
-        dur = 10.0 + (5.0 if is_fail else 0.0) + (i * 0.5)
+    for i in range(30):
+        is_fail = i % 3 == 0
+        lines = 80 if is_fail else 10
+        dur = 10.0 + (lines * 0.25) + (5.0 if is_fail else 0.0)
         r = PipelineRun(
             id=f"mm-run-{i:03d}",
             status="FAILED" if is_fail else "SUCCESS",
@@ -99,7 +100,7 @@ def test_provenance_and_can_predict_rule_17(temp_manager):
             if not is_fail
             else "sample_app/services/security_service.py",
             change_type="MODIFIED",
-            lines_added=10 if not is_fail else 80,
+            lines_added=lines,
             lines_deleted=2 if not is_fail else 20,
             is_sensitive=is_fail,
         )
@@ -110,7 +111,7 @@ def test_provenance_and_can_predict_rule_17(temp_manager):
     temp_manager.train_and_persist(
         n_samples=len(telemetry),
         data_source="GENUINE_PIPELINE_TELEMETRY",
-        genuine_historical_runs_count=20,
+        genuine_historical_runs_count=len(runs),
         training_data=telemetry,
         verified_db_source=True,
     )

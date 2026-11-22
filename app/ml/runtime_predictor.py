@@ -44,10 +44,11 @@ class RuntimePredictor:
         )
         self.is_trained = False
 
-    def train(self, X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
+    def train(self, X: np.ndarray, y: np.ndarray, time_aware: bool = True) -> dict[str, Any]:
         """
         Trains the regressor and computes regression evaluation metrics.
         When samples >= 15, evaluates on a held-out test split (20%) for scientifically honest metrics.
+        Supports time-aware chronological evaluation preventing lookahead leakage.
         X: 2D array of shape (N, 10)
         y: 1D continuous array of execution durations in seconds
         """
@@ -56,9 +57,14 @@ class RuntimePredictor:
 
         use_holdout = len(X) >= 15
         if use_holdout:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
+            if time_aware:
+                split_idx = int(len(X) * 0.8)
+                X_train, X_test = X[:split_idx], X[split_idx:]
+                y_train, y_test = y[:split_idx], y[split_idx:]
+            else:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
             self.model.fit(X_train, y_train)
             self.is_trained = True
             eval_X, eval_y = X_test, y_test

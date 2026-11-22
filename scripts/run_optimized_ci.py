@@ -107,6 +107,53 @@ def request_plan_from_api(api_url: str, payload: dict) -> dict:
     return response.json()
 
 
+def validate_plan_response(plan: object) -> tuple[bool, str]:
+    """
+    Validates execution plan payload from optimization backend.
+    Enforces that untrusted or malformed API responses cannot mislead the runner into unsafe behavior.
+    """
+    if not isinstance(plan, dict):
+        return False, "Plan response must be a JSON dictionary"
+
+    required_keys = ["decision", "is_optimized", "fallback_triggered", "selected_tests"]
+    for k in required_keys:
+        if k not in plan:
+            return False, f"Missing required field in plan: {k}"
+
+    decision = plan.get("decision")
+    if decision not in ("OPTIMIZED", "FULL_SUITE"):
+        return False, f"Invalid execution decision: {decision}"
+
+    is_optimized = plan.get("is_optimized")
+    fallback_triggered = plan.get("fallback_triggered")
+    selected_tests = plan.get("selected_tests")
+
+    if not isinstance(is_optimized, bool) or not isinstance(fallback_triggered, bool):
+        return False, "is_optimized and fallback_triggered must be booleans"
+
+    if not isinstance(selected_tests, list):
+        return False, "selected_tests must be a list"
+
+    # Optimization consistency checks
+    if decision == "OPTIMIZED":
+        if not is_optimized or fallback_triggered:
+            return (
+                False,
+                "Inconsistent plan: decision OPTIMIZED but fallback_triggered=True or is_optimized=False",
+            )
+        if len(selected_tests) == 0:
+            return False, "Inconsistent plan: decision OPTIMIZED but selected_tests is empty"
+        for t in selected_tests:
+            if not isinstance(t, str) or not t.strip():
+                return False, "selected_tests contains empty or invalid test identifier"
+            if any(char in t for char in [";", "&", "|", "`", "$", "\n", "\r"]):
+                return False, f"Test identifier contains unsafe characters: {t}"
+    elif decision == "FULL_SUITE" and is_optimized:
+        return False, "Inconsistent plan: decision FULL_SUITE but is_optimized=True"
+
+    return True, "Valid plan response"
+
+
 def execute_test_command(command_args: list) -> tuple:
     """Executes the test command while tracking peak CPU & memory telemetry."""
     print("\n" + "=" * 70)
@@ -187,7 +234,29 @@ def main():
 
         try:
             print(f"🔍 Requesting execution plan from: {args.api_url} ...")
-            plan = request_plan_from_api(args.api_url, payload)
+            raw_plan = request_plan_from_api(args.api_url, payload)
+            is_valid, validation_reason = validate_plan_response(raw_plan)
+            if not is_valid:
+                print(f"⚠️  [Safety Rule 21 Triggered] Plan validation failed: {validation_reason}")
+                print("🛡️  Enforcing MANDATORY FULL-SUITE FALLBACK for guaranteed safety.")
+                plan = {
+                    "decision": "FULL_SUITE",
+                    "decision_reason": f"Safety Rule 21: Malformed plan response ({validation_reason})",
+                    "is_optimized": False,
+                    "fallback_triggered": True,
+                    "fallback_reason": f"Safety Rule 21: Malformed plan response ({validation_reason})",
+                    "selected_tests": [],
+                    "pytest_command": "python -m pytest tests/ tests_sample_app/ -v",
+                    "selected_tests_count": 0,
+                    "total_tests_count": 0,
+                    "tests_reduction_pct": 0.0,
+                    "predicted_failure_probability": 0.0,
+                    "predicted_duration_sec": 0.0,
+                    "estimated_time_saved_sec": 0.0,
+                    "triggered_safety_rules": ["RULE_21_UNVERIFIABLE_SAFETY"],
+                }
+            else:
+                plan = raw_plan
         except (httpx.HTTPError, RuntimeError, OSError) as e:
             print(f"⚠️  [Safety Rule 19 Triggered] API unreachable or error ({e}).")
             print("🛡️  Enforcing MANDATORY FULL-SUITE FALLBACK for guaranteed safety.")

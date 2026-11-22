@@ -83,7 +83,7 @@ def test_train_endpoint_genuine_telemetry_success(client, db_session):
     db_session.add(repo)
     db_session.flush()
 
-    for i in range(16):
+    for i in range(25):
         commit = Commit(
             repository_id=repo.id,
             commit_hash=f"train-commit-{i:03d}",
@@ -94,14 +94,16 @@ def test_train_endpoint_genuine_telemetry_success(client, db_session):
         )
         db_session.add(commit)
         db_session.flush()
-        status_val = "FAILED" if i % 4 == 0 else "SUCCESS"
+        status_val = "FAILED" if i % 3 == 0 else "SUCCESS"
+        lines = 10 if status_val == "SUCCESS" else 80
+        dur = 10.0 + (lines * 0.25) + (5.0 if status_val == "FAILED" else 0.0)
         cf = ChangedFile(
             commit_id=commit.id,
             file_path="sample_app/utils/math_ops.py"
             if status_val == "SUCCESS"
             else "sample_app/services/security_service.py",
             change_type="MODIFIED",
-            lines_added=10 if status_val == "SUCCESS" else 80,
+            lines_added=lines,
             lines_deleted=2 if status_val == "SUCCESS" else 20,
             is_sensitive=(status_val == "FAILED"),
         )
@@ -112,12 +114,12 @@ def test_train_endpoint_genuine_telemetry_success(client, db_session):
             workflow_name="CI",
             status=status_val,
             is_optimized=True,
-            total_duration_sec=15.0 + float(i),
+            total_duration_sec=dur,
         )
         db_session.add(run)
     db_session.commit()
 
-    payload = {"n_samples": 16, "data_source": "GENUINE_PIPELINE_TELEMETRY"}
+    payload = {"n_samples": 25, "data_source": "GENUINE_PIPELINE_TELEMETRY"}
     response = client.post("/api/v1/predictions/train", json=payload)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()

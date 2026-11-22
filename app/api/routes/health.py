@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import logger
 from app.database.session import get_db
 
 router = APIRouter(tags=["Health & Diagnostics"])
@@ -47,7 +48,8 @@ def get_readiness(response: Response, db: Session = Depends(get_db)):
         # Run a simple, fast query to test database connectivity
         db.execute(text("SELECT 1"))
     except (SQLAlchemyError, OSError) as e:
-        db_status = f"DISCONNECTED: {e!s}"
+        logger.error(f"Readiness probe failed to connect to database: {e}")
+        db_status = "DISCONNECTED"
 
     is_ready = db_status == "CONNECTED"
     if not is_ready:
