@@ -68,4 +68,20 @@ Chronological record of design decisions, implementation phases, benchmarks, and
   - Added 36 new tests in `tests/test_safety_policy.py` (covering all 21 rules individually), `tests/test_test_selector.py`, `tests/test_decision_engine.py`, and `tests/test_plans_api.py`.
   - Total test count expanded to **104 tests**; 100% passing.
 
+---
+
+## 2026-11-22 — Phase 6: Security Scanning & Observability Telemetry Completed
+- **Status:** Complete
+- **Key Deliverables:**
+  - `app/security/scanner.py`: Parsers for Bandit (SAST), pip-audit (SCA), and Gitleaks (Secret Detection); enforces release blocking on HIGH/CRITICAL findings and strict secret redaction (`[REDACTED_SECRET]`).
+  - `app/telemetry/collector.py`: Real-time telemetry engine tracking CPU%, peak RAM (MB), disk I/O, duration, and test execution counters.
+  - `app/telemetry/anomaly_detector.py`: Statistical Z-score anomaly detector for execution duration spikes, peak memory surges, and failure rate jumps.
+  - `app/telemetry/event_correlator.py`: Deterministic error signature normalizer and failure event clustering within sliding time windows.
+  - `app/api/routes/security.py`: REST endpoints `POST /api/v1/security/scan` and `GET /api/v1/security/scans/{pipeline_run_id}`.
+  - `app/api/routes/telemetry.py`: REST endpoints `POST /api/v1/telemetry/record`, `POST /api/v1/telemetry/detect-anomalies`, and `POST /api/v1/telemetry/correlate-failures`.
+  - Updated `scripts/run_optimized_ci.py`: CI runner automatically posts execution telemetry directly to the API backend.
+  - Added 20 new tests across security scanning, telemetry collection, statistical anomaly detection, failure correlation, and REST APIs.
+  - Total test count expanded to **124 tests**; 100% passing.
+
+
 

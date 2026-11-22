@@ -248,6 +248,23 @@ def main():
     # 5. Execute Tests & Telemetry
     returncode, duration_sec, peak_mem, avg_cpu = execute_test_command(cmd)
 
+    # 6. Post Telemetry to Backend (if pipeline_run_id exists)
+    if plan.get("pipeline_run_id") and httpx is not None:
+        try:
+            telemetry_payload = {
+                "pipeline_run_id": plan["pipeline_run_id"],
+                "cpu_percent_avg": avg_cpu,
+                "memory_mb_peak": peak_mem,
+                "disk_io_mb": 0.0,
+                "runner_os": os.getenv("RUNNER_OS", "Local-Runner"),
+                "total_duration_sec": duration_sec,
+                "status": "SUCCESS" if returncode == 0 else "FAILED",
+            }
+            httpx.post(f"{args.api_url.rstrip('/')}/api/v1/telemetry/record", json=telemetry_payload, timeout=5.0)
+            print("📡 Execution telemetry reported to backend.")
+        except Exception as e:
+            print(f"⚠️  Failed to record telemetry to backend: {e}")
+
     print("\n" + "=" * 70)
     print("📊 EXECUTION TELEMETRY & RESULTS")
     print("=" * 70)

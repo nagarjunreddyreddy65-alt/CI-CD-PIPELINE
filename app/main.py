@@ -16,6 +16,8 @@ from app.api.routes.health import router as health_router
 from app.api.routes.analysis import router as analysis_router
 from app.api.routes.predictions import router as predictions_router
 from app.api.routes.plans import router as plans_router
+from app.api.routes.security import router as security_router
+from app.api.routes.telemetry import router as telemetry_router
 
 
 @asynccontextmanager
@@ -110,6 +112,8 @@ app.include_router(health_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analysis_router, prefix=settings.API_V1_PREFIX)
 app.include_router(predictions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(plans_router, prefix=settings.API_V1_PREFIX)
+app.include_router(security_router, prefix=settings.API_V1_PREFIX)
+app.include_router(telemetry_router, prefix=settings.API_V1_PREFIX)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,10 @@ def redact_sensitive_text(text: str) -> str:
     return redacted
 
 
+# Convenience alias
+redact_secrets = redact_sensitive_text
+
+
 class RedactingFormatter(logging.Formatter):
     """Custom logging formatter that strips sensitive patterns from log output."""
 
