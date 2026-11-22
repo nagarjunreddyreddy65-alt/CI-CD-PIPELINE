@@ -3,7 +3,7 @@
   "sample_count": 25,
   "genuine_historical_runs_count": 0,
   "is_production_ready": false,
-  "trained_at": "2026-11-22T07:22:15.646555+00:00",
+  "trained_at": "2026-11-22T07:25:44.718384+00:00",
   "failure_metrics": {
     "model_version": "v1.0.0",
     "training_samples": 25,
@@ -21,7 +21,7 @@
         6
       ]
     ],
-    "timestamp": "2026-11-22T07:22:15.518302+00:00"
+    "timestamp": "2026-11-22T07:25:44.527988+00:00"
   },
   "runtime_metrics": {
     "model_version": "v1.0.0",
@@ -29,7 +29,7 @@
     "mae": 0.6024,
     "rmse": 0.7643,
     "r2_score": 0.961,
-    "timestamp": "2026-11-22T07:22:15.603437+00:00"
+    "timestamp": "2026-11-22T07:25:44.659188+00:00"
   },
   "model_version": "v1.0.0"
 }
