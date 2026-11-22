@@ -250,7 +250,8 @@ class DecisionEngine:
                 "changed_files_count": change_res.total_changed_files,
                 "lines_added": change_res.total_lines_added,
                 "lines_deleted": change_res.total_lines_deleted,
-                "total_lines_changed": change_res.total_lines_added + change_res.total_lines_deleted,
+                "total_lines_changed": change_res.total_lines_added
+                + change_res.total_lines_deleted,
                 "affected_modules_count": len(affected_modules),
                 "selected_tests_count": len(selected_candidate_tests),
                 "is_sensitive_change": change_res.is_sensitive,
