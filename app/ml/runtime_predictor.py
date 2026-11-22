@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from sklearn.model_selection import train_test_split
 
 
 @dataclass
@@ -46,23 +47,39 @@ class RuntimePredictor:
     def train(self, X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
         """
         Trains the regressor and computes regression evaluation metrics.
+        When samples >= 15, evaluates on a held-out test split (20%) for scientifically honest metrics.
         X: 2D array of shape (N, 10)
         y: 1D continuous array of execution durations in seconds
         """
         if len(X) < 10:
             raise ValueError(f"Insufficient training samples ({len(X)} < 10)")
 
-        self.model.fit(X, y)
-        self.is_trained = True
+        use_holdout = len(X) >= 15
+        if use_holdout:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+            self.model.fit(X_train, y_train)
+            self.is_trained = True
+            eval_X, eval_y = X_test, y_test
+        else:
+            self.model.fit(X, y)
+            self.is_trained = True
+            eval_X, eval_y = X, y
 
-        y_pred = self.model.predict(X)
-        mae = float(mean_absolute_error(y, y_pred))
-        rmse = float(root_mean_squared_error(y, y_pred))
-        r2 = float(r2_score(y, y_pred)) if len(np.unique(y)) > 1 else 1.0
+        y_pred = self.model.predict(eval_X)
+        mae = float(mean_absolute_error(eval_y, y_pred))
+        rmse = float(root_mean_squared_error(eval_y, y_pred))
+        r2 = float(r2_score(eval_y, y_pred)) if len(np.unique(eval_y)) > 1 else 1.0
+
+        if use_holdout:
+            self.model.fit(X, y)
 
         return {
             "model_version": self.model_version,
             "training_samples": len(X),
+            "test_samples": len(eval_y),
+            "evaluated_on": "HOLDOUT_TEST_SPLIT" if use_holdout else "IN_SAMPLE_DATA",
             "mae": round(mae, 4),
             "rmse": round(rmse, 4),
             "r2_score": round(max(0.0, r2), 4),

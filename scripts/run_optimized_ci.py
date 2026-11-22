@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 CI/CD Runner Integration Script.
 Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization.
@@ -185,7 +184,6 @@ def main():
             "changed_files": changed_files,
             "historical_failure_rate": 0.05,
             "previous_execution_duration": 25.0,
-            "historical_runs_count": 20,
             "risk_threshold": 0.50,
         }
 

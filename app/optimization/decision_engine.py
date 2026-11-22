@@ -86,6 +86,11 @@ class DecisionEngine:
         self.change_analyzer = ChangeAnalyzer(self.root_dir)
         self.test_mapper = TestDependencyMapper(self.root_dir)
         self.model_manager = model_manager or ModelManager()
+        if (
+            not self.model_manager.failure_predictor.is_trained
+            or not self.model_manager.runtime_predictor.is_trained
+        ):
+            self.model_manager.load_models()
         self.safety_evaluator = safety_evaluator or SafetyPolicyEvaluator()
         self.test_selector = test_selector or TestSelector()
         self.feature_extractor = FeatureExtractor()
@@ -150,11 +155,42 @@ class DecisionEngine:
         runtime_res = self.model_manager.runtime_predictor.predict(features)
         pred_duration = runtime_res.predicted_duration_sec
 
-        # Check model artifact presence and compatibility
+        # Determine genuine historical runs (server-side DB verification takes precedence)
+        if db is not None:
+            try:
+                genuine_db_runs = (
+                    db.query(PipelineRun)
+                    .filter(PipelineRun.status.in_(["SUCCESS", "FAILED"]))
+                    .count()
+                )
+                effective_historical_runs = genuine_db_runs
+            except SQLAlchemyError as e:
+                logger.warning(f"Failed to query historical runs from DB: {e}")
+                effective_historical_runs = 0
+        else:
+            effective_historical_runs = historical_runs_count
+
+        # Ensure models are loaded and verified
+        is_trained = (
+            self.model_manager.failure_predictor.is_trained
+            and self.model_manager.runtime_predictor.is_trained
+        )
+        if not is_trained:
+            self.model_manager.load_models()
+            is_trained = (
+                self.model_manager.failure_predictor.is_trained
+                and self.model_manager.runtime_predictor.is_trained
+            )
+
         models_status = self.model_manager.get_models_status()
         model_artifacts_exist = (
             models_status["failure_predictor"]["model_file_exists"]
             and models_status["runtime_predictor"]["model_file_exists"]
+            and is_trained
+        )
+
+        can_pred, can_pred_reason = self.model_manager.can_predict(
+            genuine_historical_runs_count=effective_historical_runs
         )
 
         # Step 5: Construct Safety Context & Evaluate Deterministic Rules
@@ -186,13 +222,13 @@ class DecisionEngine:
             model_version_compatible=True,
             predicted_probability=fail_prob,
             prediction_confidence=confidence,
-            historical_runs_count=historical_runs_count,
+            historical_runs_count=effective_historical_runs,
             api_reachable=True,
             github_api_success=True,
             unverifiable_safety_detected=False,
             custom_fallback_reason=mapping_res.fallback_reason
             if mapping_res.fallback_required
-            else None,
+            else (None if can_pred else can_pred_reason),
         )
 
         safety_res: SafetyEvaluationResult = self.safety_evaluator.evaluate(safety_ctx)
@@ -276,6 +312,7 @@ class DecisionEngine:
             self._persist_to_db(
                 db=db,
                 plan_result=plan_result,
+                all_tests=all_tests,
                 changed_file_entries=changed_file_entries,
                 repository_name=repository_name or "AutonomousDevOps/CI-CD-PIPELINE",
                 commit_hash=commit_hash or f"commit-{int(time.time())}",
@@ -291,6 +328,7 @@ class DecisionEngine:
         self,
         db: Session,
         plan_result: ExecutionPlanResult,
+        all_tests: list[str],
         changed_file_entries: list[dict[str, Any]],
         repository_name: str,
         commit_hash: str,
@@ -408,3 +446,24 @@ class DecisionEngine:
         except SQLAlchemyError as e:
             db.rollback()
             logger.error(f"Error persisting execution plan to DB: {e}")
+            plan_result.decision = ExecutionDecision.FULL_SUITE
+            plan_result.is_optimized = False
+            plan_result.fallback_triggered = True
+            plan_result.fallback_reason = f"Safety Rule 21: Database persistence failure: audit record could not be stored ({e})"
+            plan_result.decision_reason = f"Full test suite required by deterministic safety policy: {plan_result.fallback_reason}."
+            if "RULE_21_UNVERIFIABLE_SAFETY" not in plan_result.triggered_safety_rules:
+                plan_result.triggered_safety_rules.append("RULE_21_UNVERIFIABLE_SAFETY")
+
+            full_plan = self.test_selector.build_test_plan(
+                selected_identifiers=all_tests,
+                all_repository_tests=all_tests,
+                force_full_suite=True,
+            )
+            plan_result.selected_tests = full_plan.selected_test_identifiers
+            plan_result.selected_test_files = full_plan.selected_test_files
+            plan_result.pytest_command = full_plan.pytest_command_string
+            plan_result.selected_tests_count = full_plan.selected_tests_count
+            plan_result.tests_reduction_pct = 0.0
+            plan_result.estimated_time_saved_sec = 0.0
+            plan_result.plan_id = None
+            plan_result.pipeline_run_id = None

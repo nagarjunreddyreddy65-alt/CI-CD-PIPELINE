@@ -82,6 +82,7 @@ def submit_security_scan(
 def get_security_scans_by_run(
     pipeline_run_id: str,
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """Retrieves all security scan records for a given pipeline run."""
     scans = db.query(SecurityScan).filter(SecurityScan.pipeline_run_id == pipeline_run_id).all()

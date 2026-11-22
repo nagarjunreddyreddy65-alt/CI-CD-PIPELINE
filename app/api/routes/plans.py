@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import logger
 from app.core.security import verify_runner_token
-from app.database.models import ExecutionPlan
+from app.database.models import ExecutionPlan, PipelineRun
 from app.database.session import get_db
 from app.optimization.decision_engine import DecisionEngine, ExecutionPlanResult
 
@@ -68,7 +68,7 @@ class PlanGenerationRequest(BaseModel):
     changed_files: list[ChangedFileItem] = Field(..., max_length=1000)
     historical_failure_rate: float = Field(0.05, ge=0.0, le=1.0)
     previous_execution_duration: float = Field(25.0, ge=0.0)
-    historical_runs_count: int = Field(20, ge=0)
+    historical_runs_count: int | None = Field(default=None, ge=0)
     risk_threshold: float = Field(0.50, ge=0.0, le=1.0)
 
 
@@ -131,11 +131,15 @@ def generate_execution_plan(
         for cf in req.changed_files
     ]
 
+    genuine_runs_count = (
+        db.query(PipelineRun).filter(PipelineRun.status.in_(["SUCCESS", "FAILED"])).count()
+    )
+
     plan_result: ExecutionPlanResult = engine.generate_plan(
         changed_file_entries=file_entries,
         historical_failure_rate=req.historical_failure_rate,
         previous_execution_duration=req.previous_execution_duration,
-        historical_runs_count=req.historical_runs_count,
+        historical_runs_count=genuine_runs_count,
         risk_threshold=req.risk_threshold,
         db=db,
         repository_name=req.repository_name,
@@ -168,7 +172,11 @@ def generate_execution_plan(
 
 
 @router.get("/{plan_id}")
-def get_execution_plan(plan_id: str, db: Session = Depends(get_db)):
+def get_execution_plan(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
+):
     """Retrieves an existing execution plan by ID."""
     plan = db.query(ExecutionPlan).filter(ExecutionPlan.id == plan_id).first()
     if not plan:
@@ -200,6 +208,7 @@ def list_execution_plans(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
 ):
     """Lists recent execution plans with pagination."""
     plans = (

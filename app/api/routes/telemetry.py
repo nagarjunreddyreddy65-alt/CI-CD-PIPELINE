@@ -6,7 +6,7 @@ and correlate systemic failure events.
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -199,4 +199,38 @@ def correlate_failures(
     return {
         "correlated_groups_count": len(groups),
         "groups": [g.to_dict() for g in groups],
+    }
+
+
+@router.get("/history", status_code=status.HTTP_200_OK)
+def get_telemetry_history(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
+):
+    """Retrieves paginated historical execution telemetry records."""
+    records = (
+        db.query(Telemetry)
+        .order_by(Telemetry.collected_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "count": len(records),
+        "limit": limit,
+        "offset": offset,
+        "telemetry": [
+            {
+                "id": t.id,
+                "pipeline_run_id": t.pipeline_run_id,
+                "cpu_percent_avg": t.cpu_percent_avg,
+                "memory_mb_peak": t.memory_mb_peak,
+                "disk_io_mb": t.disk_io_mb,
+                "runner_os": t.runner_os,
+                "collected_at": t.collected_at.isoformat() if t.collected_at else None,
+            }
+            for t in records
+        ],
     }

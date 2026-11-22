@@ -33,6 +33,96 @@ class ModelManager:
         self.runtime_predictor = RuntimePredictor()
         self.metadata_path = os.path.join(self.registry_dir, "model_metadata.json")
 
+    def extract_features_from_db_runs(
+        self, runs: list[Any]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Extracts pre-execution feature vectors and execution targets from genuine historical database records.
+        Returns:
+            X: features array (N, 10)
+            y_fail: binary failure outcome array (N,) (1 = FAILED, 0 = SUCCESS)
+            y_time: duration in seconds (N,)
+        """
+        X_list = []
+        y_fail = []
+        y_time = []
+
+        for r in runs:
+            # 1. Feature extraction
+            feat_vec = None
+            pred = getattr(r, "prediction", None)
+            if pred and getattr(pred, "features_json", None):
+                try:
+                    f = json.loads(pred.features_json)
+                    if isinstance(f, dict):
+                        feat_vec = [
+                            f.get("changed_files_count", 1),
+                            f.get("lines_added", 10),
+                            f.get("lines_deleted", 2),
+                            f.get("total_lines_changed", 12),
+                            f.get("affected_modules_count", 1),
+                            f.get("selected_tests_count", 5),
+                            f.get("is_sensitive_change", 0),
+                            f.get("has_test_file_changes", 0),
+                            f.get("historical_failure_rate", 0.05),
+                            f.get("previous_execution_duration", 25.0),
+                        ]
+                except (json.JSONDecodeError, TypeError):
+                    feat_vec = None
+
+            if feat_vec is None:
+                # Compute from commit & plan entities
+                commit = getattr(r, "commit", None)
+                changed_files = getattr(commit, "changed_files", []) if commit else []
+                n_files = max(1, len(changed_files))
+                lines_add = sum(getattr(cf, "lines_added", 0) for cf in changed_files)
+                lines_del = sum(getattr(cf, "lines_deleted", 0) for cf in changed_files)
+                tot_lines = lines_add + lines_del
+                is_sens = (
+                    1
+                    if (
+                        getattr(r, "fallback_triggered", False)
+                        or any(getattr(cf, "is_sensitive", False) for cf in changed_files)
+                    )
+                    else 0
+                )
+                has_tests = (
+                    1
+                    if any("test" in getattr(cf, "file_path", "").lower() for cf in changed_files)
+                    else 0
+                )
+                plan = getattr(r, "execution_plan", None)
+                sel_tests = getattr(plan, "selected_tests_count", 5) if plan else 5
+
+                feat_vec = [
+                    n_files,
+                    lines_add,
+                    lines_del,
+                    tot_lines,
+                    max(1, n_files),
+                    sel_tests,
+                    is_sens,
+                    has_tests,
+                    0.05,
+                    max(5.0, float(getattr(r, "total_duration_sec", 25.0) or 25.0)),
+                ]
+
+            X_list.append(feat_vec)
+
+            # 2. Target extraction
+            status_val = getattr(r, "status", "SUCCESS")
+            failed = 1 if status_val == "FAILED" else 0
+            y_fail.append(failed)
+
+            dur = float(getattr(r, "total_duration_sec", 20.0) or 20.0)
+            y_time.append(max(1.0, round(dur, 2)))
+
+        return (
+            np.array(X_list, dtype=np.float64),
+            np.array(y_fail, dtype=np.int32),
+            np.array(y_time, dtype=np.float64),
+        )
+
     def generate_synthetic_historical_data(
         self, n_samples: int = 50
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

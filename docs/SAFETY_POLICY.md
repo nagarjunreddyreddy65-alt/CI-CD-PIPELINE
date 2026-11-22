@@ -27,11 +27,11 @@ Whenever any of the following 21 scenarios is detected, the decision engine **mu
 11. **Incomplete Dependency Graph:** Disconnected components or circular dependencies preventing confident topological sorting.
 12. **Missing Test Mapping:** Changed code has no identified or mapped test cases.
 13. **Empty Selected-Test List:** The optimization algorithm yielded zero tests for a non-empty commit.
-14. **Missing ML Model Artifact:** Machine learning model file is missing or unreadable on disk.
+14. **Missing or Untrained ML Model Artifact:** Machine learning model file is missing, corrupted, unreadable on disk, or not yet trained on pipeline telemetry (`is_trained == False`). Untrained heuristic models can never authorize test skipping.
 15. **Stale or Incompatible Model:** Model version mismatch, feature dimension mismatch, or model expired.
 16. **Invalid Prediction Output:** ML model returns NaN, infinite values, or probabilities outside $[0.0, 1.0]$.
-17. **Insufficient Historical Training Data:** Pipeline runs for this repository $< 15$ runs.
-18. **Low Prediction Confidence:** Model confidence score below configured threshold ($< 0.70$).
-19. **Optimization API Unreachable:** GitHub Actions runner cannot connect to backend or receives HTTP 5xx.
+17. **Insufficient Historical Training Data:** Pipeline runs for this repository $< 15$ runs. Historical count is verified server-side against genuine completed database records; caller-supplied historical counts are rejected and discarded.
+18. **Low Prediction Confidence:** Model confidence score below configured threshold ($< 0.70$) or failure probability elevated.
+19. **Optimization API Unreachable:** GitHub Actions runner cannot connect to backend or receives HTTP 5xx. Runner deterministically executes full suite.
 20. **GitHub API Failure After Retry:** Inability to retrieve git diff or commit metadata after bounded retries.
-21. **Unverifiable Safety:** Any edge case or exception where safety cannot be proven conclusively.
+21. **Database Persistence Failure / Unverifiable Safety:** Audit record cannot be stored in database, transaction failure, or any edge case where safety cannot be proven conclusively (fail-closed to `FULL_SUITE`).

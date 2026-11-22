@@ -5,7 +5,7 @@ Provides live health checks, database readiness status, and platform metadata.
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -38,7 +38,7 @@ def get_health():
     summary="System Readiness Probe",
     description="Verifies database connectivity and readiness to process CI/CD events.",
 )
-def get_readiness(db: Session = Depends(get_db)):
+def get_readiness(response: Response, db: Session = Depends(get_db)):
     """Readiness probe: validates database connection and query capability."""
     db_status = "CONNECTED"
     db_type = "PostgreSQL" if "postgresql" in settings.DATABASE_URL else "SQLite"
@@ -49,7 +49,9 @@ def get_readiness(db: Session = Depends(get_db)):
     except (SQLAlchemyError, OSError) as e:
         db_status = f"DISCONNECTED: {e!s}"
 
-    is_ready = "CONNECTED" in db_status
+    is_ready = db_status == "CONNECTED"
+    if not is_ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {
         "ready": is_ready,

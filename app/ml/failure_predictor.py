@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.model_selection import train_test_split
 
 
 @dataclass
@@ -52,34 +53,61 @@ class FailurePredictor:
     def train(self, X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
         """
         Trains the classifier and calculates evaluation metrics.
+        When samples >= 15, evaluates on a held-out test split (20%) for scientifically honest metrics.
         X: 2D array of shape (N, 10)
         y: 1D binary array of shape (N,) where 1 = Failed, 0 = Passed
         """
         if len(X) < 10:
             raise ValueError(f"Insufficient training samples ({len(X)} < 10)")
 
-        self.model.fit(X, y)
-        self.is_trained = True
+        use_holdout = len(X) >= 15
+        if use_holdout:
+            try:
+                can_stratify = len(np.unique(y)) > 1 and all(
+                    np.sum(y == c) >= 2 for c in np.unique(y)
+                )
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y if can_stratify else None
+                )
+            except ValueError:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+            self.model.fit(X_train, y_train)
+            self.is_trained = True
+            eval_X, eval_y = X_test, y_test
+        else:
+            self.model.fit(X, y)
+            self.is_trained = True
+            eval_X, eval_y = X, y
 
-        # In-sample evaluation
-        y_pred = self.model.predict(X)
+        # Evaluation (on holdout test set if >= 15 samples, else in-sample)
+        y_pred = self.model.predict(eval_X)
         y_prob = (
-            self.model.predict_proba(X)[:, 1] if len(self.model.classes_) > 1 else np.zeros(len(y))
+            self.model.predict_proba(eval_X)[:, 1]
+            if len(self.model.classes_) > 1
+            else np.zeros(len(eval_y))
         )
 
-        prec = float(precision_score(y, y_pred, zero_division=0))
-        rec = float(recall_score(y, y_pred, zero_division=0))
-        f1 = float(f1_score(y, y_pred, zero_division=0))
-        cm = confusion_matrix(y, y_pred).tolist()
+        prec = float(precision_score(eval_y, y_pred, zero_division=0))
+        rec = float(recall_score(eval_y, y_pred, zero_division=0))
+        f1 = float(f1_score(eval_y, y_pred, zero_division=0))
+        cm = confusion_matrix(eval_y, y_pred).tolist()
 
         try:
-            auc = float(roc_auc_score(y, y_prob)) if len(np.unique(y)) > 1 else 1.0
+            auc = float(roc_auc_score(eval_y, y_prob)) if len(np.unique(eval_y)) > 1 else 1.0
         except ValueError:
             auc = 0.5
+
+        # Refit on full dataset for optimal production model weights
+        if use_holdout:
+            self.model.fit(X, y)
 
         return {
             "model_version": self.model_version,
             "training_samples": len(X),
+            "test_samples": len(eval_y),
+            "evaluated_on": "HOLDOUT_TEST_SPLIT" if use_holdout else "IN_SAMPLE_DATA",
             "precision": round(prec, 4),
             "recall": round(rec, 4),
             "f1_score": round(f1, 4),
@@ -108,7 +136,7 @@ class FailurePredictor:
             if is_sens:
                 prob = min(0.95, prob + 0.40)
             pred_class = 1 if prob >= self.risk_threshold else 0
-            conf = round(abs(prob - 0.5) * 2.0, 3)
+            conf = round(max(prob, 1.0 - prob), 4)
 
             return FailurePredictionResult(
                 predicted_failure_probability=round(prob, 4),
@@ -123,7 +151,7 @@ class FailurePredictor:
         # Probability of class 1 (Failure)
         fail_prob = float(prob_array[1]) if len(prob_array) > 1 else 0.05
         pred_class = 1 if fail_prob >= self.risk_threshold else 0
-        conf = round(abs(fail_prob - 0.5) * 2.0, 3)
+        conf = round(float(np.max(prob_array)), 4) if len(prob_array) > 0 else 0.95
 
         return FailurePredictionResult(
             predicted_failure_probability=round(fail_prob, 4),

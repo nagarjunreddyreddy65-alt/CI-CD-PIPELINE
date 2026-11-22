@@ -18,8 +18,8 @@ The repository maintains an automated regression and verification suite:
 | Test Suite | Location | Tests Count | Scope | Pass Rate |
 | :--- | :--- | :---: | :--- | :---: |
 | **Sample Target Application** | `tests_sample_app/` | 24 | Unit & regression tests covering `math_ops`, `string_ops`, `metrics_calculator`, `user_service`, `security_service` (Auth), and `payment_processor` (Billing). | **100% (24/24)** |
-| **Autonomous DevOps Core** | `tests/` | 137 | Full verification of AST parsing, NetworkX graph modeling, ML features and training, Decision Engine, all 21 Safety Policy fallback rules, 15 end-to-end scenario evaluations, controlled defect injection, API authentication (constant-time token verification on all write endpoints), path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (137/137)** |
-| **Total Automated Test Suite** | Combined | **161** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (161/161)** |
+| **Autonomous DevOps Core** | `tests/` | 154 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 20 P0/P1 adversarial remediation scenarios, 15 end-to-end scenario evaluations, controlled defect injection, API authentication (constant-time token verification on write & operational read endpoints), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (154/154)** |
+| **Total Automated Test Suite** | Combined | **178** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (178/178)** |
 
 ### Execution Command:
 ```bash
@@ -34,18 +34,22 @@ All backend API routes are strictly classified and protected:
 
 | Route / Endpoint | HTTP Method | Access Classification | Authentication Mechanism | Expected Behavior |
 | :--- | :---: | :--- | :--- | :--- |
-| `/api/v1/health` | GET | Public Read-Only | None | HTTP 200 health check |
-| `/api/v1/ready` | GET | Public Read-Only | None | HTTP 200 readiness check |
+| `/api/v1/health` | GET | Public Read-Only | None | HTTP 200 liveness check |
+| `/api/v1/ready` | GET | Public Read-Only | None | HTTP 200 when DB connected; HTTP 503 when DB disconnected |
 | `/dashboard/*` | GET | Public Read-Only | None | HTTP 200 Jinja2 HTML views |
 | `/api/v1/dashboard/metrics` | GET | Public Read-Only | None | HTTP 200 Chart.js JSON metrics |
 | `/api/v1/analysis/graph` | GET | Public Read-Only | None | HTTP 200 dependency graph stats |
 | `/api/v1/predictions/models` | GET | Public Read-Only | None | HTTP 200 model metadata |
 | `/api/v1/plans/generate` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
+| `/api/v1/plans/{plan_id}` | GET | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
+| `/api/v1/plans` | GET | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 | `/api/v1/analysis/diff` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 | `/api/v1/telemetry/record` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 201 with valid token |
 | `/api/v1/telemetry/detect-anomalies` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 | `/api/v1/telemetry/correlate-failures` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
+| `/api/v1/telemetry/history` | GET | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 | `/api/v1/security/scan` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
+| `/api/v1/security/scans/{pipeline_run_id}` | GET | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 | `/api/v1/predictions/predict` | POST | Runner Authenticated | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 | `/api/v1/predictions/train` | POST | Administrative Protected | `X-Runner-Token` (constant-time comparison) | 401 without token; 403 with invalid token; 200 with valid token |
 
@@ -118,8 +122,8 @@ The platform maintains strict provenance separation between early synthetic boot
 
 | Security Scanner | Tool Version | Target Scope | Rules / Checks | Findings | Status |
 | :--- | :--- | :--- | :--- | :---: | :---: |
-| **Ruff Linter** | 0.17.6 | Entire repository (91 files) | Pyflakes, Pycodestyle, Flake8-Bugbear, Pyupgrade, Import sorting | **0 violations** | **PASSED** |
-| **Ruff Formatter** | 0.17.6 | Entire repository (91 files) | PEP 8 line length (100), whitespace | **91 formatted** | **PASSED** |
+| **Ruff Linter** | 0.17.6 | Entire repository (92 files) | Pyflakes, Pycodestyle, Flake8-Bugbear, Pyupgrade, Import sorting | **0 violations** | **PASSED** |
+| **Ruff Formatter** | 0.17.6 | Entire repository (92 files) | PEP 8 line length (100), whitespace | **92 formatted** | **PASSED** |
 | **Bandit (SAST)** | 1.9.4 | `app/` and `sample_app/` (4,633 LOC) | Injection, hardcoded secrets, weak crypto, unsafe binds | **0 issues** | **PASSED** |
 | **pip-audit (SCA)** | 2.10.1 | `requirements.txt` | PyPI Advisory Database vulnerability audit | **0 vulnerabilities** | **PASSED** |
 | **Gitleaks** | CI Action | Git commit history | Pre-commit/CI secret leak detection | **Configured & Enforced** | **PASSED** |

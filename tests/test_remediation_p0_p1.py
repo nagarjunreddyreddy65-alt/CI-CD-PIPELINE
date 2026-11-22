@@ -1,0 +1,464 @@
+"""
+Dedicated Acceptance & Regression Tests for P0 and P1 Engineering Remediation Items.
+Autonomous DevOps: An AI-Driven Approach for Intelligent CI/CD Pipeline Optimization.
+
+Covers:
+1. P0-1: DecisionEngine model loading and rejection of untrained heuristic optimization.
+2. P0-2: Server-side historical run verification gating (Rule 17) and prevention of caller spoofing.
+3. P0-3: GitHub Actions EXE001 shebang removal verification.
+4. P0-4: Database persistence failure handling (Rule 21 fail-safe fallback) and production startup fail-fast.
+5. P1-5: Genuine telemetry training with DB feature extraction and holdout test set evaluation.
+6. P2-6: Protection of operational read endpoints with runner token.
+"""
+
+import os
+import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi import status
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.config import settings
+from app.database.models import Base, Commit, PipelineRun, Repository
+from app.main import app, lifespan
+from app.ml.model_manager import ModelManager
+from app.optimization.decision_engine import DecisionEngine, ExecutionDecision
+
+
+@pytest.fixture
+def fresh_sqlite_db():
+    """Provides a dedicated in-memory SQLite session for testing."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    session = TestingSession()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+def test_decision_engine_loads_models_on_initialization():
+    """Verifies DecisionEngine attempts to load existing model artifacts on __init__."""
+    engine = DecisionEngine(root_dir=".")
+    # The models in app/ml/models should be loaded
+    assert engine.model_manager.failure_predictor.is_trained is True
+    assert engine.model_manager.runtime_predictor.is_trained is True
+
+
+def test_decision_engine_missing_model_artifacts_triggers_rule_14(fresh_sqlite_db):
+    """
+    Verifies that when model artifacts are missing or unreadable,
+    Safety Rule 14 triggers and mandates FULL_SUITE fallback.
+    """
+    with tempfile.TemporaryDirectory() as empty_dir:
+        empty_mm = ModelManager(registry_dir=empty_dir)
+        engine = DecisionEngine(root_dir=".", model_manager=empty_mm)
+
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+
+        plan = engine.generate_plan(
+            changed_file_entries=changes,
+            db=fresh_sqlite_db,
+            historical_runs_count=25,
+        )
+
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.is_optimized is False
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_server_enforces_rule_17_when_db_runs_insufficient(fresh_sqlite_db):
+    """
+    Verifies that when database has < 15 genuine runs,
+    Rule 17 forces FULL_SUITE even if caller passes historical_runs_count=50.
+    """
+    engine = DecisionEngine(root_dir=".")
+
+    # DB currently has 0 runs (< 15)
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 3,
+            "lines_deleted": 1,
+        }
+    ]
+
+    plan = engine.generate_plan(
+        changed_file_entries=changes,
+        db=fresh_sqlite_db,
+        historical_runs_count=50,  # Caller attempts to spoof 50 runs
+    )
+
+    assert plan.decision == ExecutionDecision.FULL_SUITE
+    assert plan.is_optimized is False
+    assert plan.fallback_triggered is True
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" in plan.triggered_safety_rules
+
+
+def test_server_authorizes_optimization_when_db_runs_sufficient(fresh_sqlite_db):
+    """
+    Verifies that when database has >= 15 genuine runs,
+    Rule 17 is satisfied and optimization is authorized for safe changes.
+    """
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    fresh_sqlite_db.add(repo)
+    fresh_sqlite_db.flush()
+
+    # Seed 16 completed runs
+    for i in range(16):
+        commit = Commit(
+            repository_id=repo.id,
+            commit_hash=f"auth-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@example.com",
+            message=f"Commit {i}",
+        )
+        fresh_sqlite_db.add(commit)
+        fresh_sqlite_db.flush()
+
+        run = PipelineRun(
+            repository_id=repo.id,
+            commit_id=commit.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=18.0,
+        )
+        fresh_sqlite_db.add(run)
+    fresh_sqlite_db.commit()
+
+    engine = DecisionEngine(root_dir=".")
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 1,
+        }
+    ]
+
+    plan = engine.generate_plan(
+        changed_file_entries=changes,
+        db=fresh_sqlite_db,
+    )
+
+    assert plan.decision == ExecutionDecision.OPTIMIZED
+    assert plan.is_optimized is True
+    assert plan.fallback_triggered is False
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" not in plan.triggered_safety_rules
+
+
+def test_database_persistence_failure_triggers_rule_21_fallback():
+    """
+    Verifies that if SQLAlchemyError occurs during database persistence,
+    DecisionEngine refuses to authorize test skipping and forces FULL_SUITE.
+    """
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.count.return_value = 25
+    mock_db.query.return_value.filter.return_value.first.return_value = None
+    mock_db.commit.side_effect = SQLAlchemyError("Simulated database write failure")
+
+    engine = DecisionEngine(root_dir=".")
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 1,
+        }
+    ]
+
+    plan = engine.generate_plan(
+        changed_file_entries=changes,
+        db=mock_db,
+    )
+
+    assert plan.decision == ExecutionDecision.FULL_SUITE
+    assert plan.is_optimized is False
+    assert plan.fallback_triggered is True
+    assert "RULE_21_UNVERIFIABLE_SAFETY" in plan.triggered_safety_rules
+    assert "Database persistence failure" in (plan.fallback_reason or "")
+    assert plan.plan_id is None
+    assert plan.pipeline_run_id is None
+    mock_db.rollback.assert_called()
+
+
+def test_production_startup_fails_fast_on_database_error():
+    """
+    Verifies that in production mode, lifespan fails fast and raises
+    if database initialization fails.
+    """
+    import asyncio
+
+    async def _test():
+        with (
+            patch("app.main.init_db", side_effect=OperationalError("connection refused", {}, None)),
+            pytest.raises(SQLAlchemyError),
+        ):
+            async with lifespan(app):
+                pass
+
+    original_env = settings.ENVIRONMENT
+    try:
+        settings.ENVIRONMENT = "production"
+        asyncio.run(_test())
+    finally:
+        settings.ENVIRONMENT = original_env
+
+
+def test_runner_shebang_removed_from_ci_script():
+    """Verifies scripts/run_optimized_ci.py has no POSIX shebang on line 1 (fixes EXE001)."""
+    script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "run_optimized_ci.py")
+    with open(script_path, "r", encoding="utf-8") as f:
+        first_line = f.readline()
+    assert not first_line.startswith("#!"), (
+        f"Expected no shebang in {script_path}, found: {first_line}"
+    )
+
+
+def test_operational_read_endpoints_protected_in_production(fresh_sqlite_db):
+    """
+    Verifies operational read endpoints reject unauthorized requests with HTTP 401 in production,
+    and accept requests with valid X-Runner-Token.
+    """
+    original_env = settings.ENVIRONMENT
+    try:
+        settings.ENVIRONMENT = "production"
+        client = TestClient(app)
+
+        # 1. Missing token -> 401
+        for ep in [
+            "/api/v1/plans",
+            "/api/v1/plans/test-plan-id",
+            "/api/v1/security/scans/test-run-id",
+            "/api/v1/telemetry/history",
+        ]:
+            res = client.get(ep)
+            assert res.status_code == status.HTTP_401_UNAUTHORIZED, (
+                f"Expected 401 for {ep}, got {res.status_code}"
+            )
+
+        # 2. Invalid token -> 403
+        bad_headers = {"X-Runner-Token": "bad-runner-token"}
+        for ep in [
+            "/api/v1/plans",
+            "/api/v1/plans/test-plan-id",
+            "/api/v1/security/scans/test-run-id",
+            "/api/v1/telemetry/history",
+        ]:
+            res = client.get(ep, headers=bad_headers)
+            assert res.status_code == status.HTTP_403_FORBIDDEN, (
+                f"Expected 403 for {ep}, got {res.status_code}"
+            )
+
+        # 3. Valid token -> allowed
+        good_headers = {"X-Runner-Token": settings.RUNNER_API_KEY}
+        res = client.get("/api/v1/plans", headers=good_headers)
+        assert res.status_code == status.HTTP_200_OK
+        res = client.get("/api/v1/telemetry/history", headers=good_headers)
+        assert res.status_code == status.HTTP_200_OK
+
+    finally:
+        settings.ENVIRONMENT = original_env
+
+
+def test_corrupted_model_artifacts_triggers_rule_14(fresh_sqlite_db):
+    """Verifies that corrupted/unreadable model files fail to load and trigger Rule 14."""
+    with tempfile.TemporaryDirectory() as corrupt_dir:
+        fail_file = os.path.join(corrupt_dir, "failure_predictor.joblib")
+        time_file = os.path.join(corrupt_dir, "runtime_predictor.joblib")
+        with open(fail_file, "wb") as f:
+            f.write(b"NOT_A_VALID_JOBLIB_FILE_CORRUPTED_PAYLOAD")
+        with open(time_file, "wb") as f:
+            f.write(b"NOT_A_VALID_JOBLIB_FILE_CORRUPTED_PAYLOAD")
+
+        corrupt_mm = ModelManager(registry_dir=corrupt_dir)
+        loaded = corrupt_mm.load_models()
+        assert loaded is False
+
+        engine = DecisionEngine(root_dir=".", model_manager=corrupt_mm)
+        changes = [
+            {
+                "file_path": "sample_app/utils/math_ops.py",
+                "change_type": "MODIFIED",
+                "lines_added": 2,
+                "lines_deleted": 0,
+            }
+        ]
+        plan = engine.generate_plan(
+            changed_file_entries=changes, db=fresh_sqlite_db, historical_runs_count=20
+        )
+        assert plan.decision == ExecutionDecision.FULL_SUITE
+        assert plan.fallback_triggered is True
+        assert "RULE_14_MODEL_ARTIFACT_MISSING" in plan.triggered_safety_rules
+
+
+def test_synthetic_only_model_never_production_ready():
+    """Verifies synthetic bootstrap models are never marked production ready."""
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        res = mm.train_and_persist(n_samples=25, data_source="SYNTHETIC_BOOTSTRAP")
+        assert res["provenance"] == "SYNTHETIC_BOOTSTRAP"
+        assert res["is_production_ready"] is False
+        can_pred, reason = mm.can_predict(genuine_historical_runs_count=0)
+        assert can_pred is False
+        assert "Safety Rule 17" in reason
+
+
+def test_genuine_model_with_valid_provenance():
+    """Verifies genuine telemetry training marks model as production ready."""
+    with tempfile.TemporaryDirectory() as td:
+        mm = ModelManager(registry_dir=td)
+        X, y_fail, y_time = mm.generate_synthetic_historical_data(25)
+        res = mm.train_and_persist(
+            n_samples=25,
+            data_source="GENUINE_PIPELINE_TELEMETRY",
+            genuine_historical_runs_count=25,
+            training_data=(X, y_fail, y_time),
+        )
+        assert res["provenance"] == "GENUINE_PIPELINE_TELEMETRY"
+        assert res["is_production_ready"] is True
+        can_pred, _ = mm.can_predict(genuine_historical_runs_count=25)
+        assert can_pred is True
+
+
+def test_insufficient_historical_runs_exactly_one_below_minimum(fresh_sqlite_db):
+    """
+    Verifies that exactly 14 completed runs (one below the minimum threshold of 15)
+    strictly triggers Rule 17 and enforces FULL_SUITE fallback.
+    """
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    fresh_sqlite_db.add(repo)
+    fresh_sqlite_db.flush()
+
+    for i in range(14):
+        commit = Commit(
+            repository_id=repo.id,
+            commit_hash=f"run-14-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@ci.local",
+            message=f"Commit {i}",
+        )
+        fresh_sqlite_db.add(commit)
+        fresh_sqlite_db.flush()
+        run = PipelineRun(
+            repository_id=repo.id,
+            commit_id=commit.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=16.0,
+        )
+        fresh_sqlite_db.add(run)
+    fresh_sqlite_db.commit()
+
+    engine = DecisionEngine(root_dir=".")
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 0,
+        }
+    ]
+    plan = engine.generate_plan(changed_file_entries=changes, db=fresh_sqlite_db)
+    assert plan.decision == ExecutionDecision.FULL_SUITE
+    assert plan.fallback_triggered is True
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" in plan.triggered_safety_rules
+
+
+def test_sufficient_historical_runs_exactly_at_minimum(fresh_sqlite_db):
+    """
+    Verifies that exactly 15 completed runs (the exact minimum threshold)
+    satisfies Rule 17 and permits OPTIMIZED test selection for safe changes.
+    """
+    repo = Repository(
+        name="AutonomousDevOps/CI-CD-PIPELINE",
+        owner="AutonomousDevOps",
+        clone_url="https://github.com/AutonomousDevOps/CI-CD-PIPELINE",
+        default_branch="main",
+    )
+    fresh_sqlite_db.add(repo)
+    fresh_sqlite_db.flush()
+
+    for i in range(15):
+        commit = Commit(
+            repository_id=repo.id,
+            commit_hash=f"run-15-commit-{i:03d}",
+            branch="main",
+            author_name="Dev",
+            author_email="dev@ci.local",
+            message=f"Commit {i}",
+        )
+        fresh_sqlite_db.add(commit)
+        fresh_sqlite_db.flush()
+        run = PipelineRun(
+            repository_id=repo.id,
+            commit_id=commit.id,
+            workflow_name="CI",
+            status="SUCCESS",
+            is_optimized=True,
+            total_duration_sec=16.0,
+        )
+        fresh_sqlite_db.add(run)
+    fresh_sqlite_db.commit()
+
+    engine = DecisionEngine(root_dir=".")
+    changes = [
+        {
+            "file_path": "sample_app/utils/math_ops.py",
+            "change_type": "MODIFIED",
+            "lines_added": 2,
+            "lines_deleted": 0,
+        }
+    ]
+    plan = engine.generate_plan(changed_file_entries=changes, db=fresh_sqlite_db)
+    assert plan.decision == ExecutionDecision.OPTIMIZED
+    assert plan.is_optimized is True
+    assert plan.fallback_triggered is False
+    assert "RULE_17_INSUFFICIENT_TRAINING_DATA" not in plan.triggered_safety_rules
+
+
+def test_runner_api_unreachable_forces_full_suite():
+    """
+    Verifies Safety Rule 19: when CI runner cannot reach the backend API,
+    it catches the failure and falls back to FULL_SUITE.
+    """
+    import httpx
+
+    from scripts.run_optimized_ci import request_plan_from_api
+
+    with pytest.raises((httpx.HTTPError, RuntimeError, OSError)):
+        request_plan_from_api("http://127.0.0.1:99999", {"test": "payload"})

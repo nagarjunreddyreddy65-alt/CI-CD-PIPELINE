@@ -1,25 +1,25 @@
 {
-  "benchmark_timestamp": "2026-11-22 07:46:37Z",
+  "benchmark_timestamp": "2026-11-22 09:40:22Z",
   "total_available_target_tests": 24,
   "scenarios": {
     "baseline_full_suite": {
-      "duration_sec": 1.461,
+      "duration_sec": 1.246,
       "exit_code": 0,
-      "cpu_percent": 4.2,
-      "memory_mb": 11934.6,
+      "cpu_percent": 19.0,
+      "memory_mb": 12849.3,
       "status": "PASSED",
-      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.29s ==============================\n",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 24 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 25%]\ntests_sample_app\\test_metrics_calculator.py ...                          [ 37%]\ntests_sample_app\\test_payment_processor.py ...                           [ 50%]\ntests_sample_app\\test_security_service.py .....                          [ 70%]\ntests_sample_app\\test_string_ops.py ...                                  [ 83%]\ntests_sample_app\\test_user_service.py ....                               [100%]\n\n============================= 24 passed in 0.23s ==============================\n",
       "tests_executed": 24,
       "decision": "FULL_SUITE_BASELINE",
       "reduction_pct": 0.0
     },
     "optimized_math_change": {
-      "duration_sec": 1.289,
+      "duration_sec": 1.083,
       "exit_code": 0,
-      "cpu_percent": 5.8,
-      "memory_mb": 11944.6,
+      "cpu_percent": 10.2,
+      "memory_mb": 12816.9,
       "status": "PASSED",
-      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.08s ==============================\n",
+      "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0\nrootdir: C:\\AI DRIVEN CI_CD OPTIMIZATION\\CI-CD-PIPELINE\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, platformdirs-4.14.8, cov-7.1.0, xdist-3.8.0\ncollected 9 items\n\ntests_sample_app\\test_math_ops.py ......                                 [ 66%]\ntests_sample_app\\test_metrics_calculator.py ...                          [100%]\n\n============================== 9 passed in 0.06s ==============================\n",
       "tests_executed": 9,
       "decision": "OPTIMIZED",
       "reduction_pct": 62.5,
@@ -52,7 +52,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_2_AUTH",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -64,7 +63,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_1_MIGRATION",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -76,7 +74,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_3_PAYMENT",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -88,7 +85,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_4_CRYPTO",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -100,7 +96,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_5_DEPENDENCY_MANIFEST",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -113,7 +108,6 @@
       "triggered_rules": [
         "RULE_6_LOCK_FILE",
         "RULE_8_UNSUPPORTED_FILES",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -125,7 +119,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_7_CI_WORKFLOW",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -137,7 +130,6 @@
       "fallback_triggered": true,
       "triggered_rules": [
         "RULE_8_UNSUPPORTED_FILES",
-        "RULE_18_LOW_PREDICTION_CONFIDENCE",
         "RULE_21_UNVERIFIABLE_SAFETY"
       ],
       "passed": true
@@ -205,10 +197,10 @@
   ],
   "all_15_scenarios_passed": true,
   "summary": {
-    "baseline_duration_sec": 1.461,
-    "optimized_duration_sec": 1.289,
-    "runtime_savings_sec": 0.172,
-    "runtime_savings_pct": 11.8,
+    "baseline_duration_sec": 1.246,
+    "optimized_duration_sec": 1.083,
+    "runtime_savings_sec": 0.163,
+    "runtime_savings_pct": 13.1,
     "test_count_reduction_pct_on_leaf": 62.5,
     "safety_policy_compliance_rate_pct": 100.0,
     "total_scenarios_evaluated": 15,

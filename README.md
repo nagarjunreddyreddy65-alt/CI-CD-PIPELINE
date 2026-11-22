@@ -94,28 +94,36 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ## 🔒 Security & API Access Control
 
-All runner-facing write endpoints require constant-time pre-shared token comparison via `hmac.compare_digest` with the `X-Runner-Token` header:
-- `POST /api/v1/plans/generate` — Generates execution plans.
+All runner-facing write endpoints and sensitive operational read endpoints require constant-time pre-shared token comparison via `hmac.compare_digest` with the `X-Runner-Token` header:
+- `POST /api/v1/plans/generate` — Generates execution plans (historical runs verified server-side).
+- `GET /api/v1/plans/{plan_id}` & `GET /api/v1/plans` — Retrieves operational plan audit history.
 - `POST /api/v1/analysis/diff` — Evaluates commit diff and maps test dependencies.
 - `POST /api/v1/telemetry/record` — Records CPU, memory, and duration telemetry.
 - `POST /api/v1/telemetry/detect-anomalies` — Z-score performance anomaly detection.
 - `POST /api/v1/telemetry/correlate-failures` — Groups failures by normalized error signature.
-- `POST /api/v1/security/scan` — Ingests and audits Bandit, pip-audit, and Gitleaks reports.
+- `GET /api/v1/telemetry/history` — Retrieves pipeline telemetry history.
+- `POST /api/v1/security/scan` & `GET /api/v1/security/scans/{pipeline_run_id}` — Audits security reports.
+- `POST /api/v1/predictions/predict` & `POST /api/v1/predictions/train` — ML model inference and training.
 
 Public read-only endpoints:
-- `GET /api/v1/health`, `GET /api/v1/ready`
-- `GET /dashboard/*`, `GET /api/v1/dashboard/metrics`
-- `GET /api/v1/analysis/graph`, `GET /api/v1/predictions/models`
+- `GET /api/v1/health` — Liveness health check.
+- `GET /api/v1/ready` — Readiness check (returns HTTP 503 if database disconnected).
+- `GET /dashboard/*`, `GET /api/v1/dashboard/metrics` — Visual dashboard views and chart metrics.
+- `GET /api/v1/analysis/graph`, `GET /api/v1/predictions/models` — Public system status and model metadata.
 
-In production (`ENVIRONMENT=production`), startup configuration validation strictly enforces that default secrets (`SECRET_KEY`, `RUNNER_API_KEY`) and default database passwords are overridden. Path traversal protection is enforced across all file input payloads.
+In production (`ENVIRONMENT=production`):
+- Startup configuration validation strictly enforces that default secrets (`SECRET_KEY`, `RUNNER_API_KEY`) and default database passwords are overridden.
+- Database connection failure at application startup raises an immediate fatal exception (fail-fast).
+- Path traversal protection is strictly enforced across all file input payloads.
+- Database persistence failure during plan generation triggers Safety Rule 21 fail-closed fallback to `FULL_SUITE`.
 
 ---
 
 ## 🧪 Verification & Automated Testing
 
-All core components, API endpoints, sample application modules, safety rules, and authentication layers are strictly verified:
+All core components, API endpoints, sample application modules, safety rules, ML model loading, and authentication layers are strictly verified:
 
-### 1. Run Complete Test Suite (161 tests, 100% pass rate)
+### 1. Run Complete Test Suite (178 tests, 100% pass rate)
 ```bash
 python -m pytest tests/ tests_sample_app/ -v
 ```
@@ -125,7 +133,7 @@ python -m pytest tests/ tests_sample_app/ -v
 ruff check .
 ruff format --check .
 ```
-*(0 violations across all 91 repository files; 100% formatted)*
+*(0 violations across all 92 repository files; 100% formatted)*
 
 ### 3. Security Auditing (Bandit SAST, pip-audit SCA, Gitleaks)
 ```bash

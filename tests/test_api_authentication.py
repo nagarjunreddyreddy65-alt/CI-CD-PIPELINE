@@ -77,6 +77,19 @@ def test_protected_endpoints_missing_token_in_production():
             )
             assert "Missing runner authentication token" in res.json().get("detail", "")
 
+        get_endpoints = [
+            "/api/v1/plans",
+            "/api/v1/plans/sample-plan-id",
+            "/api/v1/security/scans/sample-run-id",
+            "/api/v1/telemetry/history",
+        ]
+        for url in get_endpoints:
+            res = raw_client.get(url)
+            assert res.status_code == status.HTTP_401_UNAUTHORIZED, (
+                f"Expected 401 for GET {url} without token, got {res.status_code}"
+            )
+            assert "Missing runner authentication token" in res.json().get("detail", "")
+
     finally:
         settings.ENVIRONMENT = original_env
 
@@ -119,6 +132,19 @@ def test_protected_endpoints_invalid_token():
             )
             assert "Invalid runner authentication token" in res.json().get("detail", "")
 
+        get_endpoints = [
+            "/api/v1/plans",
+            "/api/v1/plans/sample-plan-id",
+            "/api/v1/security/scans/sample-run-id",
+            "/api/v1/telemetry/history",
+        ]
+        for url in get_endpoints:
+            res = raw_client.get(url, headers=bad_headers)
+            assert res.status_code == status.HTTP_403_FORBIDDEN, (
+                f"Expected 403 for GET {url} with invalid token, got {res.status_code}"
+            )
+            assert "Invalid runner authentication token" in res.json().get("detail", "")
+
     finally:
         settings.ENVIRONMENT = original_env
 
@@ -157,6 +183,14 @@ def test_protected_endpoints_valid_token():
             json={"changed_files_count": 1, "lines_added": 5, "lines_deleted": 1},
             headers=good_headers,
         )
+        assert res.status_code == status.HTTP_200_OK
+
+        # Test GET /api/v1/plans
+        res = raw_client.get("/api/v1/plans", headers=good_headers)
+        assert res.status_code == status.HTTP_200_OK
+
+        # Test GET /api/v1/telemetry/history
+        res = raw_client.get("/api/v1/telemetry/history", headers=good_headers)
         assert res.status_code == status.HTTP_200_OK
 
     finally:

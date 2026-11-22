@@ -1,35 +1,39 @@
 {
   "provenance": "SYNTHETIC_BOOTSTRAP",
-  "sample_count": 25,
+  "sample_count": 50,
   "genuine_historical_runs_count": 0,
   "is_production_ready": false,
-  "trained_at": "2026-11-22T07:48:39.195718+00:00",
+  "trained_at": "2026-11-22T09:14:12.630856+00:00",
   "failure_metrics": {
     "model_version": "v1.0.0",
-    "training_samples": 25,
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1_score": 1.0,
-    "roc_auc": 1.0,
+    "training_samples": 50,
+    "test_samples": 10,
+    "evaluated_on": "HOLDOUT_TEST_SPLIT",
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1_score": 0.0,
+    "roc_auc": 0.5,
     "confusion_matrix": [
       [
-        19,
-        0
+        6,
+        2
       ],
       [
-        0,
-        6
+        2,
+        0
       ]
     ],
-    "timestamp": "2026-11-22T07:48:39.056014+00:00"
+    "timestamp": "2026-11-22T09:14:12.450107+00:00"
   },
   "runtime_metrics": {
     "model_version": "v1.0.0",
-    "training_samples": 25,
-    "mae": 0.6024,
-    "rmse": 0.7643,
-    "r2_score": 0.961,
-    "timestamp": "2026-11-22T07:48:39.149853+00:00"
+    "training_samples": 50,
+    "test_samples": 10,
+    "evaluated_on": "HOLDOUT_TEST_SPLIT",
+    "mae": 1.0591,
+    "rmse": 1.2146,
+    "r2_score": 0.8623,
+    "timestamp": "2026-11-22T09:14:12.592541+00:00"
   },
   "model_version": "v1.0.0"
 }
