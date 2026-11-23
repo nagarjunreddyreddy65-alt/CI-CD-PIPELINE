@@ -11,6 +11,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -550,3 +551,45 @@ class DecisionEngine:
             plan_result.estimated_time_saved_sec = 0.0
             plan_result.plan_id = None
             plan_result.pipeline_run_id = None
+
+    @staticmethod
+    def complete_pipeline_run(
+        db: Session,
+        pipeline_run_id: str,
+        status: str,
+        total_duration_sec: float | None = None,
+        error_message: str | None = None,
+    ) -> PipelineRun | None:
+        """
+        Transitions a pipeline run to terminal status (SUCCESS, FAILED, ABORTED, CANCELLED),
+        computing duration and recording an audit trail.
+        """
+        run = db.query(PipelineRun).filter(PipelineRun.id == pipeline_run_id).first()
+        if not run:
+            return None
+
+        completed_ts = datetime.now(UTC)
+        run.completed_at = completed_ts
+        run.status = status
+
+        if total_duration_sec is not None:
+            run.total_duration_sec = total_duration_sec
+        elif run.created_at:
+            created_tz = (
+                run.created_at if run.created_at.tzinfo else run.created_at.replace(tzinfo=UTC)
+            )
+            run.total_duration_sec = max(0.0, round((completed_ts - created_tz).total_seconds(), 2))
+
+        if error_message and not run.fallback_reason:
+            run.fallback_reason = error_message
+
+        audit = AuditLog(
+            event_type="PIPELINE_RUN_COMPLETED",
+            entity_type="PipelineRun",
+            entity_id=run.id,
+            details=f"Run transitioned to {status}. Duration: {run.total_duration_sec}s.",
+        )
+        db.add(audit)
+        db.commit()
+        db.refresh(run)
+        return run

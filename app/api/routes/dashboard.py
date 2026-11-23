@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import logger
 from app.database.models import (
     ExecutionPlan,
     PipelineRun,
@@ -28,6 +29,7 @@ from app.database.models import (
 )
 from app.database.session import get_db
 from app.ml.model_manager import ModelManager
+from app.telemetry.anomaly_detector import StatisticalAnomalyDetector
 from app.telemetry.event_correlator import EventCorrelator, FailureEvent
 
 router = APIRouter(tags=["Web Dashboard"])
@@ -35,7 +37,30 @@ router = APIRouter(tags=["Web Dashboard"])
 # Setup Jinja2 Templates Directory
 TEMPLATE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "templates"))
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
-model_manager = ModelManager()
+
+_model_manager_singleton: ModelManager | None = None
+
+
+def get_model_manager(request: Request | None = None) -> ModelManager:
+    """
+    Retrieves the verified ModelManager from app.state or a lazily-loaded singleton.
+    Guarantees model artifacts are verified and loaded without reloading on every request.
+    """
+    if (
+        request
+        and hasattr(request.app.state, "model_manager")
+        and request.app.state.model_manager is not None
+    ):
+        return request.app.state.model_manager
+
+    global _model_manager_singleton
+    if _model_manager_singleton is None:
+        _model_manager_singleton = ModelManager()
+        try:
+            _model_manager_singleton.load_models()
+        except (OSError, ValueError, RuntimeError, KeyError, AttributeError) as exc:
+            logger.debug(f"Dashboard model load notice: {exc}")
+    return _model_manager_singleton
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -50,20 +75,39 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
     runs = db.query(PipelineRun).order_by(PipelineRun.created_at.desc()).all()
     total_runs = len(runs)
     successful_runs = sum(1 for r in runs if r.status == "SUCCESS")
-    failed_runs = sum(1 for r in runs if r.status == "FAILED")
+    failed_runs = sum(1 for r in runs if r.status in ("FAILED", "ABORTED"))
     optimized_runs = sum(1 for r in runs if r.is_optimized)
     fallback_runs = sum(1 for r in runs if r.fallback_triggered)
 
-    avg_duration = round(sum(r.total_duration_sec for r in runs) / max(1, total_runs), 2)
+    # Calculate average duration across runs with recorded duration > 0, fallback to all runs
+    completed_durations = [r.total_duration_sec for r in runs if r.total_duration_sec > 0]
+    avg_duration = (
+        round(sum(completed_durations) / max(1, len(completed_durations)), 2)
+        if completed_durations
+        else 0.0
+    )
     optimization_rate = round((optimized_runs / max(1, total_runs)) * 100.0, 1)
     fallback_rate = round((fallback_runs / max(1, total_runs)) * 100.0, 1)
 
-    # Estimate time saved
+    # Estimate time saved: modeled on standard 20.0s test suite baseline
     plans = db.query(ExecutionPlan).all()
-    time_saved_total = 0.0
-    for p in plans:
-        if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0:
-            time_saved_total += round(20.0 * (p.tests_reduction_pct / 100.0), 1)
+    estimated_time_saved_total = round(
+        sum(
+            20.0 * (p.tests_reduction_pct / 100.0)
+            for p in plans
+            if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0
+        ),
+        1,
+    )
+    # Measured empirical time saved: actual differences from completed runs with telemetry duration > 0
+    measured_time_saved_total = round(
+        sum(
+            max(0.0, 20.0 - r.total_duration_sec)
+            for r in runs
+            if r.is_optimized and r.status == "SUCCESS" and r.total_duration_sec > 0
+        ),
+        1,
+    )
 
     # Recent runs table
     recent_runs = []
@@ -108,7 +152,9 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
                 "optimized_runs": optimized_runs,
                 "fallback_runs": fallback_runs,
                 "avg_duration_sec": avg_duration,
-                "time_saved_sec": round(time_saved_total, 1),
+                "time_saved_sec": estimated_time_saved_total,
+                "measured_time_saved_sec": measured_time_saved_total,
+                "time_saved_basis": "Modeled from standard 20.0s full-suite baseline",
                 "optimization_rate": optimization_rate,
                 "fallback_rate": fallback_rate,
             },
@@ -164,7 +210,8 @@ def get_history_page(request: Request, db: Session = Depends(get_db)):
 @router.get("/dashboard/ai-insights", response_class=HTMLResponse)
 def get_ai_insights_page(request: Request, db: Session = Depends(get_db)):
     """Page C: AI Insights & ML Models."""
-    models_status = model_manager.get_models_status()
+    mm = get_model_manager(request)
+    models_status = mm.get_models_status()
     predictions = db.query(Prediction).order_by(Prediction.created_at.desc()).limit(20).all()
 
     pred_history = []
@@ -203,7 +250,7 @@ def get_ai_insights_page(request: Request, db: Session = Depends(get_db)):
                 "failure_predictor": {
                     "is_trained": models_status["failure_predictor"]["is_trained"],
                     "version": models_status["failure_predictor"]["version"],
-                    "risk_threshold": model_manager.failure_predictor.risk_threshold,
+                    "risk_threshold": mm.failure_predictor.risk_threshold,
                 },
                 "runtime_predictor": {
                     "is_trained": models_status["runtime_predictor"]["is_trained"],
@@ -298,16 +345,57 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
     telemetries = db.query(Telemetry).order_by(Telemetry.collected_at.desc()).limit(20).all()
     total_records = len(telemetries)
 
-    avg_cpu = round(sum(t.cpu_percent_avg for t in telemetries) / max(1, total_records), 1)
-    avg_mem = round(sum(t.memory_mb_peak for t in telemetries) / max(1, total_records), 1)
+    avg_cpu = (
+        round(sum(t.cpu_percent_avg for t in telemetries) / max(1, total_records), 1)
+        if total_records > 0
+        else 0.0
+    )
+    avg_mem = (
+        round(sum(t.memory_mb_peak for t in telemetries) / max(1, total_records), 1)
+        if total_records > 0
+        else 0.0
+    )
 
     chart_labels = [f"Job {i + 1}" for i in range(min(15, total_records))]
     chart_cpu = [t.cpu_percent_avg for t in reversed(telemetries[:15])]
     chart_mem = [t.memory_mb_peak for t in reversed(telemetries[:15])]
 
+    # Anomaly Detection using Statistical Baselines (Z-score >= 2.5)
+    detector = StatisticalAnomalyDetector(min_historical_samples=3)
+    anomalies_count = 0
+    anomaly_status = "PENDING_TELEMETRY"
+    anomaly_findings = []
+
+    if total_records >= 3:
+        current_t = telemetries[0]
+        curr_dur = current_t.pipeline_run.total_duration_sec if current_t.pipeline_run else 0.0
+        current_run_metrics = {
+            "duration_sec": curr_dur,
+            "memory_mb_peak": current_t.memory_mb_peak,
+            "cpu_percent_avg": current_t.cpu_percent_avg,
+        }
+        hist_metrics = []
+        for t in telemetries[1:]:
+            t_dur = t.pipeline_run.total_duration_sec if t.pipeline_run else 0.0
+            hist_metrics.append(
+                {
+                    "duration_sec": t_dur,
+                    "memory_mb_peak": t.memory_mb_peak,
+                    "cpu_percent_avg": t.cpu_percent_avg,
+                }
+            )
+        report = detector.detect_anomalies(current_run_metrics, hist_metrics)
+        anomalies_count = len(report.anomalies)
+        anomaly_status = "ANOMALIES_DETECTED" if report.is_anomalous else "HEALTHY"
+        anomaly_findings = [f.message for f in report.anomalies]
+    elif total_records > 0:
+        anomaly_status = "INSUFFICIENT_SAMPLES"
+    else:
+        anomaly_status = "PENDING_TELEMETRY"
+
     # Correlate failure events from failed pipeline runs
     correlator = EventCorrelator()
-    failed_runs = db.query(PipelineRun).filter(PipelineRun.status == "FAILED").all()
+    failed_runs = db.query(PipelineRun).filter(PipelineRun.status.in_(("FAILED", "ABORTED"))).all()
     events = []
     for fr in failed_runs:
         events.append(
@@ -336,7 +424,10 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
                 "avg_cpu": avg_cpu,
                 "avg_memory_mb": avg_mem,
             },
-            "anomalies_count": 0,
+            "anomalies_count": anomalies_count,
+            "anomaly_status": anomaly_status,
+            "anomaly_findings": anomaly_findings,
+            "total_telemetry_records": total_records,
             "correlated_groups": [g.to_dict() for g in groups],
             "telemetry_chart_labels": chart_labels,
             "telemetry_chart_cpu": chart_cpu,
@@ -348,7 +439,8 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
 @router.get("/dashboard/health", response_class=HTMLResponse)
 def get_health_page(request: Request):
     """Page G: System Health & Diagnostics."""
-    models_status = model_manager.get_models_status()
+    mm = get_model_manager(request)
+    models_status = mm.get_models_status()
 
     return templates.TemplateResponse(
         request=request,

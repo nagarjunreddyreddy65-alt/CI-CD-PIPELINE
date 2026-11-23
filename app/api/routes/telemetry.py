@@ -76,12 +76,19 @@ def record_telemetry(
     # 1. Update pipeline run if duration/status supplied
     run = db.query(PipelineRun).filter(PipelineRun.id == req.pipeline_run_id).first()
     if run:
-        if req.total_duration_sec is not None:
-            run.total_duration_sec = req.total_duration_sec
         if req.status:
             run.status = req.status
-            if req.status in ("SUCCESS", "FAILED"):
+            if req.status in ("SUCCESS", "FAILED", "ABORTED", "CANCELLED"):
                 run.completed_at = datetime.now(UTC)
+        if req.total_duration_sec is not None:
+            run.total_duration_sec = req.total_duration_sec
+        elif run.created_at and run.total_duration_sec == 0.0 and run.completed_at:
+            created_tz = (
+                run.created_at if run.created_at.tzinfo else run.created_at.replace(tzinfo=UTC)
+            )
+            run.total_duration_sec = max(
+                0.0, round((run.completed_at - created_tz).total_seconds(), 2)
+            )
 
     # 2. Upsert telemetry record
     existing = db.query(Telemetry).filter(Telemetry.pipeline_run_id == req.pipeline_run_id).first()

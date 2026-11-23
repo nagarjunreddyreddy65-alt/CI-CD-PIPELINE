@@ -43,6 +43,39 @@ async def lifespan(app: FastAPI):
         if settings.ENVIRONMENT == "production":
             raise
 
+    # Reconcile stale uncompleted historical runs
+    try:
+        from app.database.session import SessionLocal
+        from app.optimization.reconciliation import reconcile_stale_runs
+
+        with SessionLocal() as db_session:
+            reconciliation_result = reconcile_stale_runs(db_session, stale_threshold_hours=2.0)
+            if reconciliation_result["reconciled_count"] > 0:
+                logger.info(
+                    f"🔄 Startup reconciliation completed: {reconciliation_result['reconciled_count']} "
+                    "stale running record(s) safely transitioned to ABORTED."
+                )
+    except (SQLAlchemyError, OSError, ValueError, RuntimeError) as e:
+        logger.warning(f"⚠️ Startup run reconciliation notice: {e}")
+
+    # Initialize and load ML models
+    try:
+        from app.ml.model_manager import ModelManager
+
+        app.state.model_manager = ModelManager()
+        loaded = app.state.model_manager.load_models()
+        if loaded:
+            logger.info(
+                "✅ ML failure and runtime prediction models verified and loaded successfully."
+            )
+        else:
+            logger.info(
+                "ℹ️ ML models registry present; running in baseline mode pending certified training."
+            )
+    except (OSError, ValueError, RuntimeError, KeyError, AttributeError) as e:
+        logger.warning(f"⚠️ Model preload notice: {e}")
+        app.state.model_manager = None
+
     yield
 
     logger.info("🛑 Autonomous DevOps backend shutting down.")

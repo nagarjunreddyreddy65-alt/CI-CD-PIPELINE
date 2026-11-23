@@ -950,11 +950,33 @@ class ModelManager:
         return True, "Models validated and ready for inference."
 
     def load_models(self) -> bool:
-        """Loads model artifacts from disk if available."""
+        """Loads model artifacts from disk if available and integrity hashes match."""
         fail_path = os.path.join(self.registry_dir, "failure_predictor.joblib")
         time_path = os.path.join(self.registry_dir, "runtime_predictor.joblib")
 
         if os.path.exists(fail_path) and os.path.exists(time_path):
+            # Check cryptographic integrity hashes against metadata if present
+            if os.path.exists(self.metadata_path):
+                try:
+                    with open(self.metadata_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    hashes = meta.get("artifact_hashes")
+                    if isinstance(hashes, dict):
+                        exp_fail = hashes.get("failure_predictor_sha256")
+                        exp_time = hashes.get("runtime_predictor_sha256")
+                        if exp_fail and self._compute_file_sha256(fail_path) != exp_fail:
+                            logger.error(
+                                "Artifact checksum mismatch for failure_predictor.joblib. Rejecting load."
+                            )
+                            return False
+                        if exp_time and self._compute_file_sha256(time_path) != exp_time:
+                            logger.error(
+                                "Artifact checksum mismatch for runtime_predictor.joblib. Rejecting load."
+                            )
+                            return False
+                except (OSError, json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Could not verify artifact metadata hashes during load: {e}")
+
             try:
                 self.failure_predictor = joblib.load(fail_path)
                 self.runtime_predictor = joblib.load(time_path)

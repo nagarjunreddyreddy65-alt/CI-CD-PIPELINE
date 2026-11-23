@@ -318,30 +318,64 @@ def main():
         cmd = [sys.executable, "-m", "pytest", "tests/", "tests_sample_app/", "-v"]
 
     # 5. Execute Tests & Telemetry
-    returncode, duration_sec, peak_mem, avg_cpu = execute_test_command(cmd)
-
-    # 6. Post Telemetry to Backend (if pipeline_run_id exists)
-    if plan.get("pipeline_run_id") and httpx is not None:
-        try:
-            telemetry_payload = {
-                "pipeline_run_id": plan["pipeline_run_id"],
-                "cpu_percent_avg": avg_cpu,
-                "memory_mb_peak": peak_mem,
-                "disk_io_mb": 0.0,
-                "runner_os": os.getenv("RUNNER_OS", "Local-Runner"),
-                "total_duration_sec": duration_sec,
-                "status": "SUCCESS" if returncode == 0 else "FAILED",
-            }
+    returncode = 1
+    duration_sec = 0.0
+    peak_mem = 0.0
+    avg_cpu = 0.0
+    try:
+        returncode, duration_sec, peak_mem, avg_cpu = execute_test_command(cmd)
+    except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
+        print(f"❌ Execution exception during test execution: {exc}")
+        returncode = 1
+    finally:
+        terminal_status = "SUCCESS" if returncode == 0 else "FAILED"
+        if plan.get("pipeline_run_id") and httpx is not None:
             runner_token = os.getenv("RUNNER_API_KEY", "autonomous_devops_runner_dev_api_key_2026")
-            httpx.post(
-                f"{args.api_url.rstrip('/')}/api/v1/telemetry/record",
-                json=telemetry_payload,
-                headers={"X-Runner-Token": runner_token},
-                timeout=5.0,
-            )
-            print("📡 Execution telemetry reported to backend.")
-        except (httpx.HTTPError, OSError) as e:
-            print(f"⚠️  Failed to record telemetry to backend: {e}")
+            headers = {"X-Runner-Token": runner_token}
+            reported = False
+            # 1. Primary: Record telemetry + terminal status
+            try:
+                telemetry_payload = {
+                    "pipeline_run_id": plan["pipeline_run_id"],
+                    "cpu_percent_avg": avg_cpu,
+                    "memory_mb_peak": peak_mem,
+                    "disk_io_mb": 0.0,
+                    "runner_os": os.getenv("RUNNER_OS", "Local-Runner"),
+                    "total_duration_sec": duration_sec,
+                    "status": terminal_status,
+                }
+                httpx.post(
+                    f"{args.api_url.rstrip('/')}/api/v1/telemetry/record",
+                    json=telemetry_payload,
+                    headers=headers,
+                    timeout=5.0,
+                )
+                reported = True
+                print(f"📡 Execution telemetry and status '{terminal_status}' reported to backend.")
+            except (httpx.HTTPError, OSError) as e:
+                print(f"⚠️  Failed to record telemetry to backend: {e}")
+
+            # 2. Secondary fallback: Explicit run completion endpoint
+            if not reported:
+                try:
+                    completion_payload = {
+                        "status": terminal_status,
+                        "total_duration_sec": duration_sec,
+                        "error_message": None
+                        if returncode == 0
+                        else "Execution failed with non-zero exit code",
+                    }
+                    httpx.post(
+                        f"{args.api_url.rstrip('/')}/api/v1/plans/runs/{plan['pipeline_run_id']}/complete",
+                        json=completion_payload,
+                        headers=headers,
+                        timeout=5.0,
+                    )
+                    print(
+                        f"📡 Terminal status '{terminal_status}' confirmed via completion endpoint."
+                    )
+                except (httpx.HTTPError, OSError) as e:
+                    print(f"⚠️  Failed to record terminal status to backend: {e}")
 
     print("\n" + "=" * 70)
     print("📊 EXECUTION TELEMETRY & RESULTS")

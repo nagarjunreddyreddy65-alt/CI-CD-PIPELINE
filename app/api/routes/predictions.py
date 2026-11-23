@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import logger
 from app.core.security import verify_admin_token, verify_runner_token
 from app.database.session import get_db
 from app.ml.feature_extractor import FeatureExtractor
@@ -16,8 +17,22 @@ from app.ml.model_manager import ModelManager
 
 router = APIRouter(prefix="/predictions", tags=["Machine Learning Predictions"])
 
-# Global model manager instance
+# Global model manager instance with artifact verification and preloading
 model_manager = ModelManager()
+try:
+    model_manager.load_models()
+except (OSError, ValueError, RuntimeError, KeyError, AttributeError) as exc:
+    logger.debug(f"Predictions initial model load notice: {exc}")
+
+
+def ensure_models_loaded() -> ModelManager:
+    """Ensures models are loaded if valid certified artifacts exist."""
+    if not model_manager.failure_predictor.is_trained:
+        try:
+            model_manager.load_models()
+        except (OSError, ValueError, RuntimeError, KeyError, AttributeError) as exc:
+            logger.debug(f"Predictions lazy model load notice: {exc}")
+    return model_manager
 
 
 class PredictRequest(BaseModel):
@@ -64,8 +79,9 @@ def predict_pipeline(
         previous_execution_duration=payload.previous_execution_duration,
     )
 
-    fail_res = model_manager.failure_predictor.predict(features)
-    time_res = model_manager.runtime_predictor.predict(features)
+    mm = ensure_models_loaded()
+    fail_res = mm.failure_predictor.predict(features)
+    time_res = mm.runtime_predictor.predict(features)
 
     return {
         "success": True,
@@ -144,15 +160,16 @@ def train_models(
 )
 def get_model_status():
     """Inspects active model readiness and versions."""
+    mm = ensure_models_loaded()
     return {
         "success": True,
         "failure_predictor": {
-            "is_trained": model_manager.failure_predictor.is_trained,
-            "version": model_manager.failure_predictor.model_version,
-            "risk_threshold": model_manager.failure_predictor.risk_threshold,
+            "is_trained": mm.failure_predictor.is_trained,
+            "version": mm.failure_predictor.model_version,
+            "risk_threshold": mm.failure_predictor.risk_threshold,
         },
         "runtime_predictor": {
-            "is_trained": model_manager.runtime_predictor.is_trained,
-            "version": model_manager.runtime_predictor.model_version,
+            "is_trained": mm.runtime_predictor.is_trained,
+            "version": mm.runtime_predictor.model_version,
         },
     }

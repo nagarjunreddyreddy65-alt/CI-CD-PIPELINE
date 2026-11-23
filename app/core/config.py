@@ -4,8 +4,12 @@ Centralizes environment variables, safety thresholds, and system flags.
 Enforces strict secret validation in production while maintaining effortless local development.
 """
 
+from pathlib import Path
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 
 INSECURE_DEFAULT_SECRET_KEY = "autonomous_devops_insecure_default_secret_key_change_in_production"
 INSECURE_DEFAULT_RUNNER_KEY = "autonomous_devops_runner_dev_api_key_2026"
@@ -88,6 +92,32 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @model_validator(mode="after")
+    def resolve_paths(self) -> "Settings":
+        """Resolves relative SQLite fallback database URLs and model registry paths against BASE_DIR."""
+        # 1. Resolve SQLite URL
+        if self.SQLITE_FALLBACK_URL.startswith("sqlite:///./"):
+            rel_path = self.SQLITE_FALLBACK_URL[len("sqlite:///./") :]
+            abs_db = (BASE_DIR / rel_path).resolve().as_posix()
+            self.SQLITE_FALLBACK_URL = f"sqlite:///{abs_db}"
+        elif self.SQLITE_FALLBACK_URL.startswith(
+            "sqlite:///"
+        ) and not self.SQLITE_FALLBACK_URL.startswith("sqlite:////"):
+            path_part = self.SQLITE_FALLBACK_URL[len("sqlite:///") :]
+            if not Path(path_part).is_absolute() and not path_part.startswith(":memory:"):
+                abs_db = (BASE_DIR / path_part).resolve().as_posix()
+                self.SQLITE_FALLBACK_URL = f"sqlite:///{abs_db}"
+
+        # 2. Resolve Model Registry Path
+        if self.MODEL_REGISTRY_PATH.startswith("./"):
+            self.MODEL_REGISTRY_PATH = (
+                (BASE_DIR / self.MODEL_REGISTRY_PATH[2:]).resolve().as_posix()
+            )
+        elif not Path(self.MODEL_REGISTRY_PATH).is_absolute():
+            self.MODEL_REGISTRY_PATH = (BASE_DIR / self.MODEL_REGISTRY_PATH).resolve().as_posix()
+
+        return self
 
     @model_validator(mode="after")
     def validate_production_configuration(self) -> "Settings":

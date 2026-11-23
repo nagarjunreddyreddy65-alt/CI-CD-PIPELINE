@@ -35,13 +35,29 @@
   <div class="kpi-card warning">
     <div class="kpi-header">
       <span class="kpi-title">Anomalies Flagged</span>
-      <span class="badge badge-warning">Z-Score</span>
+      <span class="badge badge-warning">Z-Score &ge; 2.5</span>
     </div>
     <div class="kpi-value" style="color: {% if anomalies_count > 0 %}var(--accent-warning-text){% else %}var(--accent-success-text){% endif %};">
-      {{ anomalies_count }}
+      {% if anomaly_status == 'PENDING_TELEMETRY' %}
+        0 <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">(Pending Telemetry)</span>
+      {% elif anomaly_status == 'INSUFFICIENT_SAMPLES' %}
+        0 <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">(Baseline Forming)</span>
+      {% else %}
+        {{ anomalies_count }}
+      {% endif %}
     </div>
     <div class="kpi-trend">
-      <span>Resource consumption &ge; 2.5 standard deviations</span>
+      <span>
+        {% if anomaly_status == 'PENDING_TELEMETRY' %}
+          Awaiting telemetry ingestion
+        {% elif anomaly_status == 'INSUFFICIENT_SAMPLES' %}
+          {{ total_telemetry_records }}/3 min samples collected
+        {% elif anomalies_count == 0 %}
+          Healthy statistical baseline (no outliers)
+        {% else %}
+          Resource consumption &ge; 2.5 standard deviations
+        {% endif %}
+      </span>
     </div>
   </div>
 

@@ -224,3 +224,70 @@ def list_execution_plans(
             }
         )
     return {"plans": results, "count": len(results), "limit": limit, "offset": offset}
+
+
+class RunCompletionRequest(BaseModel):
+    status: str = Field(
+        ...,
+        pattern="^(SUCCESS|FAILED|CANCELLED|ABORTED)$",
+        description="Terminal execution status",
+        json_schema_extra={"example": "SUCCESS"},
+    )
+    total_duration_sec: float | None = Field(
+        None,
+        ge=0.0,
+        description="Measured execution duration in seconds",
+        json_schema_extra={"example": 14.2},
+    )
+    error_message: str | None = Field(
+        None,
+        max_length=1000,
+        description="Failure or abort explanation if applicable",
+    )
+
+
+class RunCompletionResponse(BaseModel):
+    success: bool
+    pipeline_run_id: str
+    status: str
+    total_duration_sec: float
+    completed_at: str
+    message: str
+
+
+@router.post(
+    "/runs/{run_id}/complete",
+    response_model=RunCompletionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def complete_pipeline_run_status(
+    run_id: str,
+    req: RunCompletionRequest,
+    db: Session = Depends(get_db),
+    _authorized: bool = Depends(verify_runner_token),
+):
+    """
+    Explicitly transitions a PipelineRun to a terminal status (SUCCESS, FAILED, CANCELLED, ABORTED),
+    recording exact duration, completion timestamp, and an immutable audit trail.
+    """
+    run = DecisionEngine.complete_pipeline_run(
+        db=db,
+        pipeline_run_id=run_id,
+        status=req.status,
+        total_duration_sec=req.total_duration_sec,
+        error_message=req.error_message,
+    )
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pipeline run '{run_id}' not found.",
+        )
+
+    return RunCompletionResponse(
+        success=True,
+        pipeline_run_id=run.id,
+        status=run.status,
+        total_duration_sec=run.total_duration_sec,
+        completed_at=run.completed_at.isoformat() if run.completed_at else "",
+        message=f"Pipeline run '{run.id}' updated to {run.status}.",
+    )
