@@ -2,64 +2,103 @@
 
 {% block title %}Observability & Telemetry{% endblock %}
 {% block page_title %}Runtime Telemetry & Anomaly Observability{% endblock %}
+{% block page_description %}Hardware metrics, Z-score resource anomaly detection, and deterministic systemic failure event clustering{% endblock %}
 
 {% block content %}
+<!-- Observability KPI Grid -->
 <div class="kpi-grid">
-  <div class="kpi-card">
+  <!-- Avg CPU Utilization -->
+  <div class="kpi-card info">
     <div class="kpi-header">
-      <span>Avg CPU Utilization</span>
+      <span class="kpi-title">Avg CPU Utilization</span>
       <span class="badge badge-info">psutil</span>
     </div>
     <div class="kpi-value">{{ telemetry_kpis.avg_cpu }}%</div>
-    <div class="kpi-trend">Across all test runner jobs</div>
+    <div class="kpi-trend">
+      <span>Hardware consumption across runner jobs</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Avg Peak Memory -->
+  <div class="kpi-card info">
     <div class="kpi-header">
-      <span>Avg Peak Memory</span>
+      <span class="kpi-title">Avg Peak Memory</span>
       <span class="badge badge-purple">RSS</span>
     </div>
     <div class="kpi-value">{{ telemetry_kpis.avg_memory_mb }} MB</div>
-    <div class="kpi-trend">Peak memory per run</div>
+    <div class="kpi-trend">
+      <span>Resident Set Size peak memory footprint</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Statistical Anomalies Flagged -->
+  <div class="kpi-card warning">
     <div class="kpi-header">
-      <span>Anomalies Flagged</span>
+      <span class="kpi-title">Anomalies Flagged</span>
       <span class="badge badge-warning">Z-Score</span>
     </div>
-    <div class="kpi-value" style="color: {% if anomalies_count > 0 %}var(--accent-yellow){% else %}var(--accent-green){% endif %};">
+    <div class="kpi-value" style="color: {% if anomalies_count > 0 %}var(--accent-warning-text){% else %}var(--accent-success-text){% endif %};">
       {{ anomalies_count }}
     </div>
-    <div class="kpi-trend">Z-Score &ge; 2.5 standard deviations</div>
+    <div class="kpi-trend">
+      <span>Resource consumption &ge; 2.5 standard deviations</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Correlated Failure Clusters -->
+  <div class="kpi-card danger">
     <div class="kpi-header">
-      <span>Failure Clusters</span>
+      <span class="kpi-title">Failure Clusters</span>
       <span class="badge badge-info">Correlator</span>
     </div>
     <div class="kpi-value">{{ correlated_groups | length }}</div>
-    <div class="kpi-trend">Clustered by error signature</div>
+    <div class="kpi-trend">
+      <span>Clustered by deterministic error signature</span>
+    </div>
   </div>
 </div>
 
-<!-- Telemetry Chart -->
+<!-- Hardware Telemetry Over Time Chart -->
 <div class="card">
-  <div class="card-title">Hardware Telemetry Over Time</div>
-  <div class="card-subtitle">CPU utilization % (left axis) and Peak Memory MB (right axis)</div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Hardware Telemetry Over Time</div>
+      <div class="card-subtitle">CPU utilization % (left axis, cyan) and Peak Memory MB (right axis, purple) across pipeline runs</div>
+    </div>
+  </div>
   <div class="chart-wrapper">
     <canvas id="telemetryChart"></canvas>
   </div>
 </div>
 
-<!-- Correlated Failure Clusters Section -->
+<!-- Correlated Failure Event Clusters Ledger Table -->
 <div class="card">
-  <div class="card-title">Deterministic Failure Event Correlations</div>
-  <div class="card-subtitle">Clustered failure signatures grouped across commits, workflows, and time windows</div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Deterministic Failure Event Correlations</div>
+      <div class="card-subtitle">Clustered failure signatures grouped across commits, workflows, and time windows</div>
+    </div>
+  </div>
+
+  <!-- Filter & Search Controls -->
+  <div class="table-controls">
+    <div class="search-input-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" class="search-input table-search-input" data-target-table="telemetryCorrelationsTable" placeholder="Search by group ID, signature, or commit...">
+    </div>
+
+    <div class="filter-pills" id="correlationsFilter">
+      <button type="button" class="filter-btn active" data-filter="ALL">All Clusters</button>
+      <button type="button" class="filter-btn" data-filter="SYSTEMIC">Systemic Failure</button>
+      <button type="button" class="filter-btn" data-filter="ISOLATED">Isolated Defect</button>
+    </div>
+  </div>
 
   <div class="table-responsive">
-    <table class="data-table">
+    <table class="data-table" id="telemetryCorrelationsTable">
       <thead>
         <tr>
           <th>Group ID</th>
@@ -74,13 +113,30 @@
       <tbody>
         {% for grp in correlated_groups %}
         <tr>
-          <td><span class="code-inline">{{ grp.group_id }}</span></td>
-          <td><strong style="color: var(--accent-red);">{{ grp.failure_signature }}</strong></td>
-          <td>{{ grp.occurrence_count }} times</td>
           <td>
-            {% for c in grp.affected_commits %}
-              <span class="code-inline">{{ c[:8] }}</span>
-            {% endfor %}
+            <a href="#" class="copyable code-inline" data-copy="{{ grp.group_id }}" title="Click to copy Group ID">
+              {{ grp.group_id }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </a>
+          </td>
+          <td>
+            <strong style="color: var(--accent-danger-text); font-family: 'JetBrains Mono', monospace; font-size: 0.82rem;">
+              {{ grp.failure_signature }}
+            </strong>
+          </td>
+          <td>
+            <span style="font-weight: 600; font-variant-numeric: tabular-nums;">{{ grp.occurrence_count }}</span>
+            <span style="color: var(--text-muted); font-size: 0.8rem;">runs</span>
+          </td>
+          <td>
+            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+              {% for c in grp.affected_commits %}
+                <span class="code-inline">{{ c[:8] }}</span>
+              {% endfor %}
+            </div>
           </td>
           <td>
             {% if grp.is_systemic %}
@@ -89,13 +145,21 @@
               <span class="badge badge-warning">Isolated Defect</span>
             {% endif %}
           </td>
-          <td><small style="color: var(--text-muted);">{{ grp.first_seen }}</small></td>
-          <td><small style="color: var(--text-muted);">{{ grp.last_seen }}</small></td>
+          <td>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">{{ grp.first_seen }}</small>
+          </td>
+          <td>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">{{ grp.last_seen }}</small>
+          </td>
         </tr>
         {% else %}
-        <tr>
-          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            No correlated failure events detected. Telemetry and test runs are clean.
+        <tr class="empty-state-row">
+          <td colspan="7" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">No Correlated Failure Events Detected</div>
+            <div style="font-size: 0.82rem;">Telemetry shows clean test passes or uncorrelated isolated events.</div>
           </td>
         </tr>
         {% endfor %}
@@ -107,9 +171,12 @@
 
 {% block scripts %}
 <script>
-  const telemetryLabels = {{ telemetry_chart_labels | tojson }};
-  const cpuData = {{ telemetry_chart_cpu | tojson }};
-  const memData = {{ telemetry_chart_mem | tojson }};
-  initObservabilityCharts(telemetryLabels, cpuData, memData);
+  document.addEventListener("DOMContentLoaded", () => {
+    const telemetryLabels = {{ telemetry_chart_labels | tojson }};
+    const cpuData = {{ telemetry_chart_cpu | tojson }};
+    const memData = {{ telemetry_chart_mem | tojson }};
+    initObservabilityCharts(telemetryLabels, cpuData, memData);
+    initStatusFilter("correlationsFilter", "telemetryCorrelationsTable", 4);
+  });
 </script>
 {% endblock %}

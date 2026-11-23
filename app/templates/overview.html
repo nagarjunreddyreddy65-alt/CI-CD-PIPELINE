@@ -2,114 +2,164 @@
 
 {% block title %}Pipeline Overview{% endblock %}
 {% block page_title %}Executive Pipeline Overview{% endblock %}
+{% block page_description %}Real-time telemetry, AST test selection metrics, and deterministic safety enforcement telemetry{% endblock %}
 
 {% block content %}
-<!-- KPI Cards Grid -->
+<!-- Top Executive KPI Grid -->
 <div class="kpi-grid">
+  <!-- Total Pipeline Runs -->
   <div class="kpi-card">
     <div class="kpi-header">
-      <span>Total Pipeline Runs</span>
-      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+      <span class="kpi-title">Total Pipeline Runs</span>
+      <span class="badge badge-info">Audited</span>
     </div>
     <div class="kpi-value">{{ kpis.total_runs }}</div>
     <div class="kpi-trend">
-      <span class="trend-positive">{{ kpis.successful_runs }} passed</span> &bull; 
-      <span class="trend-negative">{{ kpis.failed_runs }} failed</span>
+      <span class="badge badge-success" style="font-size: 0.72rem;">{{ kpis.successful_runs }} passed</span>
+      <span class="badge badge-failed" style="font-size: 0.72rem;">{{ kpis.failed_runs }} failed</span>
     </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Optimization Rate -->
+  <div class="kpi-card success">
     <div class="kpi-header">
-      <span>Optimization Rate</span>
-      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+      <span class="kpi-title">Optimization Rate</span>
+      <span class="badge badge-success">AST Active</span>
     </div>
     <div class="kpi-value">{{ kpis.optimization_rate }}%</div>
     <div class="kpi-trend">
       <span>{{ kpis.optimized_runs }} optimized</span> &bull; 
-      <span>{{ kpis.fallback_runs }} full fallback</span>
+      <span>{{ kpis.fallback_runs }} fallback</span>
     </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Avg Execution Time -->
+  <div class="kpi-card info">
     <div class="kpi-header">
-      <span>Avg Execution Time</span>
-      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <span class="kpi-title">Avg Execution Time</span>
+      <span class="badge badge-purple">Latency</span>
     </div>
     <div class="kpi-value">{{ kpis.avg_duration_sec }}s</div>
-    <div class="kpi-trend">Per pipeline execution</div>
+    <div class="kpi-trend">
+      <span>Mean duration per pipeline run</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Estimated Time Saved -->
+  <div class="kpi-card success">
     <div class="kpi-header">
-      <span>Estimated Time Saved</span>
-      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <span class="kpi-title">Estimated Time Saved</span>
+      <span class="badge badge-success">Compute ROI</span>
     </div>
-    <div class="kpi-value" style="color: var(--accent-green);">{{ kpis.time_saved_sec }}s</div>
-    <div class="kpi-trend">Through AST test selection</div>
-  </div>
-
-  <div class="kpi-card">
-    <div class="kpi-header">
-      <span>Safety Fallback Rate</span>
-      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+    <div class="kpi-value">{{ kpis.time_saved_sec }}s</div>
+    <div class="kpi-trend">
+      <span>Cumulative CPU wall-clock saved</span>
     </div>
-    <div class="kpi-value" style="color: var(--accent-yellow);">{{ kpis.fallback_rate }}%</div>
-    <div class="kpi-trend">Guaranteed 21 fallback rules</div>
   </div>
 </div>
 
-<!-- Charts Section -->
-<div class="charts-row">
+<!-- Visualization Charts Grid -->
+<div class="charts-grid">
+  <!-- Runtime Performance Trend -->
   <div class="card">
-    <div class="card-title">Pipeline Runtime Performance Trend</div>
-    <div class="card-subtitle">Execution duration progression across recent pipeline runs</div>
+    <div class="card-header">
+      <div>
+        <div class="card-title">Pipeline Runtime Performance Trend</div>
+        <div class="card-subtitle">Execution duration progression across chronological CI runs (seconds)</div>
+      </div>
+    </div>
     <div class="chart-wrapper">
       <canvas id="durationTrendChart"></canvas>
     </div>
   </div>
 
+  <!-- Execution Mode Breakdown Doughnut -->
   <div class="card">
-    <div class="card-title">Execution Mode Breakdown</div>
-    <div class="card-subtitle">Optimized subset vs Deterministic full-suite fallback</div>
+    <div class="card-header">
+      <div>
+        <div class="card-title">Execution Mode Breakdown</div>
+        <div class="card-subtitle">AST test selection vs Deterministic fallback</div>
+      </div>
+    </div>
     <div class="chart-wrapper">
       <canvas id="decisionDoughnutChart"></canvas>
     </div>
   </div>
 </div>
 
-<!-- Recent Pipelines Table -->
+<!-- Recent Pipeline Runs Ledger -->
 <div class="card">
-  <div class="card-title">Recent Pipeline Executions</div>
-  <div class="card-subtitle">Audit trail of the most recent commits and optimization decisions</div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Recent Pipeline Executions</div>
+      <div class="card-subtitle">Cryptographically verified execution telemetry and decision provenance</div>
+    </div>
+  </div>
+
+  <!-- Filter & Search Controls -->
+  <div class="table-controls">
+    <div class="search-input-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" class="search-input table-search-input" data-target-table="recentRunsTable" placeholder="Search by commit, status, repo, or reason...">
+    </div>
+
+    <div class="filter-pills" id="recentRunsStatusFilter">
+      <button type="button" class="filter-btn active" data-filter="ALL">All Runs</button>
+      <button type="button" class="filter-btn" data-filter="PASSED">Passed</button>
+      <button type="button" class="filter-btn" data-filter="FAILED">Failed</button>
+      <button type="button" class="filter-btn" data-filter="OPTIMIZED">Optimized</button>
+      <button type="button" class="filter-btn" data-filter="FULL SUITE">Full Suite</button>
+    </div>
+  </div>
+
   <div class="table-responsive">
-    <table class="data-table">
+    <table class="data-table" id="recentRunsTable">
       <thead>
         <tr>
           <th>Repository</th>
-          <th>Commit</th>
-          <th>Status</th>
+          <th>Commit Hash</th>
+          <th>Run Status</th>
           <th>Duration</th>
-          <th>Decision</th>
-          <th>Tests Executed</th>
+          <th>Execution Decision</th>
+          <th>Tests (Selected / Total)</th>
           <th>Decision Reason</th>
-          <th>Timestamp</th>
+          <th>Recorded At</th>
         </tr>
       </thead>
       <tbody>
         {% for run in recent_runs %}
         <tr>
-          <td><span class="code-inline">{{ run.repository_name }}</span></td>
-          <td><span class="code-inline">{{ run.commit_hash[:8] }}</span></td>
+          <td><span class="code-inline" style="color: #94a3b8;">{{ run.repository_name }}</span></td>
+          <td>
+            <a href="#" class="copyable code-inline" data-copy="{{ run.commit_hash }}" title="Click to copy commit hash">
+              {{ run.commit_hash[:8] }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </a>
+          </td>
           <td>
             {% if run.status == 'SUCCESS' %}
-              <span class="badge badge-success">Passed</span>
+              <span class="badge badge-success">
+                <span class="pulse-dot" style="width: 5px; height: 5px; background: var(--accent-success);"></span>
+                Passed
+              </span>
             {% elif run.status == 'FAILED' %}
-              <span class="badge badge-failed">Failed</span>
+              <span class="badge badge-failed">
+                <span class="pulse-dot" style="width: 5px; height: 5px; background: var(--accent-danger);"></span>
+                Failed
+              </span>
             {% else %}
               <span class="badge badge-info">{{ run.status }}</span>
             {% endif %}
           </td>
-          <td>{{ run.duration_sec }}s</td>
+          <td>
+            <span style="font-variant-numeric: tabular-nums; font-weight: 600;">{{ run.duration_sec }}s</span>
+          </td>
           <td>
             {% if run.is_optimized %}
               <span class="badge badge-success">Optimized</span>
@@ -117,14 +167,27 @@
               <span class="badge badge-warning">Full Suite</span>
             {% endif %}
           </td>
-          <td>{{ run.selected_tests }} / {{ run.total_tests }}</td>
-          <td><small style="color: var(--text-secondary);">{{ run.decision_reason }}</small></td>
-          <td><small style="color: var(--text-muted);">{{ run.created_at }}</small></td>
+          <td>
+            <span style="font-weight: 600;">{{ run.selected_tests }}</span>
+            <span style="color: var(--text-muted);">/ {{ run.total_tests }}</span>
+          </td>
+          <td style="max-width: 280px;">
+            <span style="color: var(--text-secondary); font-size: 0.8rem;">{{ run.decision_reason }}</span>
+          </td>
+          <td>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">{{ run.created_at }}</small>
+          </td>
         </tr>
         {% else %}
-        <tr>
-          <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            No pipeline executions recorded yet. Execute tests or run <span class="code-inline">python scripts/run_optimized_ci.py</span> to populate live data.
+        <tr class="empty-state-row">
+          <td colspan="8" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">No Pipeline Runs Recorded</div>
+            <div style="font-size: 0.82rem;">Run <code class="code-inline">python scripts/run_optimized_ci.py</code> to trigger an intelligent CI/CD execution.</div>
           </td>
         </tr>
         {% endfor %}
@@ -136,10 +199,13 @@
 
 {% block scripts %}
 <script>
-  const trendLabels = {{ chart_labels | tojson }};
-  const durationData = {{ chart_durations | tojson }};
-  const optCount = {{ kpis.optimized_runs }};
-  const fallCount = {{ kpis.fallback_runs }};
-  initOverviewCharts(trendLabels, durationData, optCount, fallCount);
+  document.addEventListener("DOMContentLoaded", () => {
+    const trendLabels = {{ chart_labels | tojson }};
+    const durationData = {{ chart_durations | tojson }};
+    const optCount = {{ kpis.optimized_runs }};
+    const fallCount = {{ kpis.fallback_runs }};
+    initOverviewCharts(trendLabels, durationData, optCount, fallCount);
+    initStatusFilter("recentRunsStatusFilter", "recentRunsTable", 2);
+  });
 </script>
 {% endblock %}

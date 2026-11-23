@@ -2,14 +2,38 @@
 
 {% block title %}Pipeline History{% endblock %}
 {% block page_title %}Historical Pipeline Executions{% endblock %}
+{% block page_description %}Complete immutable audit ledger of CI executions, commit SHAs, AST selections, and deterministic fallback enforcement{% endblock %}
 
 {% block content %}
 <div class="card">
-  <div class="card-title">Comprehensive Pipeline Run Ledger</div>
-  <div class="card-subtitle">Complete chronological record of all CI runs, commits, test selections, and decision reasons</div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Historical Pipeline Ledger</div>
+      <div class="card-subtitle">Audited record of pipeline runs with real-time client-side search and status filters</div>
+    </div>
+  </div>
+
+  <!-- Table Controls & Search Bar -->
+  <div class="table-controls">
+    <div class="search-input-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" class="search-input table-search-input" data-target-table="historyRunsTable" placeholder="Search by run ID, commit, branch, author, or reason...">
+    </div>
+
+    <div class="filter-pills" id="historyStatusFilter">
+      <button type="button" class="filter-btn active" data-filter="ALL">All Runs</button>
+      <button type="button" class="filter-btn" data-filter="PASSED">Passed</button>
+      <button type="button" class="filter-btn" data-filter="FAILED">Failed</button>
+      <button type="button" class="filter-btn" data-filter="OPTIMIZED">Optimized</button>
+      <button type="button" class="filter-btn" data-filter="FULL SUITE">Full Suite</button>
+    </div>
+  </div>
 
   <div class="table-responsive">
-    <table class="data-table">
+    <table class="data-table" id="historyRunsTable">
       <thead>
         <tr>
           <th>Run ID</th>
@@ -18,22 +42,46 @@
           <th>Status</th>
           <th>Duration</th>
           <th>Tests Executed</th>
-          <th>Test Reduction</th>
-          <th>Decision & Safety Rule</th>
+          <th>Reduction %</th>
+          <th>Decision & Attribution</th>
           <th>Executed At</th>
         </tr>
       </thead>
       <tbody>
         {% for run in history_runs %}
         <tr>
-          <td><span class="code-inline">{{ run.id[:8] }}</span></td>
           <td>
-            <strong>{{ run.repository_name }}</strong><br>
-            <small style="color: var(--text-muted);">branch: {{ run.branch }}</small>
+            <a href="#" class="copyable code-inline" data-copy="{{ run.id }}" title="Click to copy Run ID">
+              {{ run.id[:8] }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </a>
           </td>
           <td>
-            <span class="code-inline">{{ run.commit_hash[:8] }}</span><br>
-            <small style="color: var(--text-secondary);">{{ run.author_name }} &bull; {{ run.commit_message[:30] }}</small>
+            <strong>{{ run.repository_name }}</strong><br>
+            <span style="font-size: 0.78rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="6" y1="3" x2="6" y2="15"></line>
+                <circle cx="18" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <path d="M18 9a9 9 0 0 1-9 9"></path>
+              </svg>
+              {{ run.branch }}
+            </span>
+          </td>
+          <td>
+            <a href="#" class="copyable code-inline" data-copy="{{ run.commit_hash }}" title="Click to copy commit hash">
+              {{ run.commit_hash[:8] }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </a><br>
+            <small style="color: var(--text-secondary);">
+              <strong>{{ run.author_name }}</strong> &bull; {{ run.commit_message[:36] }}
+            </small>
           </td>
           <td>
             {% if run.status == 'SUCCESS' %}
@@ -44,29 +92,41 @@
               <span class="badge badge-info">{{ run.status }}</span>
             {% endif %}
           </td>
-          <td>{{ run.duration_sec }}s</td>
-          <td>{{ run.selected_tests }} / {{ run.total_tests }}</td>
+          <td>
+            <span style="font-weight: 600; font-variant-numeric: tabular-nums;">{{ run.duration_sec }}s</span>
+          </td>
+          <td>
+            <span style="font-weight: 600;">{{ run.selected_tests }}</span>
+            <span style="color: var(--text-muted);">/ {{ run.total_tests }}</span>
+          </td>
           <td>
             {% if run.reduction_pct > 0 %}
-              <strong style="color: var(--accent-green);">{{ run.reduction_pct }}%</strong>
+              <span class="badge badge-success" style="font-weight: 700;">-{{ run.reduction_pct }}%</span>
             {% else %}
-              <span style="color: var(--text-muted);">0.0%</span>
+              <span style="color: var(--text-muted); font-size: 0.8rem;">0.0%</span>
             {% endif %}
+          </td>
+          <td style="max-width: 260px;">
+            {% if run.is_optimized %}
+              <span class="badge badge-success" style="margin-bottom: 3px;">Optimized</span><br>
+            {% else %}
+              <span class="badge badge-warning" style="margin-bottom: 3px;">Full Suite</span><br>
+            {% endif %}
+            <small style="color: var(--text-secondary); line-height: 1.3; display: block;">{{ run.decision_reason }}</small>
           </td>
           <td>
-            {% if run.is_optimized %}
-              <span class="badge badge-success">Optimized</span><br>
-            {% else %}
-              <span class="badge badge-warning">Full Suite</span><br>
-            {% endif %}
-            <small style="color: var(--text-secondary);">{{ run.decision_reason }}</small>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">{{ run.created_at }}</small>
           </td>
-          <td><small style="color: var(--text-muted);">{{ run.created_at }}</small></td>
         </tr>
         {% else %}
-        <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            No historical pipeline records found.
+        <tr class="empty-state-row">
+          <td colspan="9" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">No Historical Pipelines Found</div>
+            <div style="font-size: 0.82rem;">Pipeline runs will be automatically persisted as commits are processed.</div>
           </td>
         </tr>
         {% endfor %}
@@ -74,4 +134,12 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    initStatusFilter("historyStatusFilter", "historyRunsTable", 3);
+  });
+</script>
 {% endblock %}

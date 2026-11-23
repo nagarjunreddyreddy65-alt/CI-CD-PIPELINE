@@ -3,90 +3,181 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Overview{% endblock %} — Autonomous DevOps</title>
+  <title>{% block title %}Overview{% endblock %} — Autonomous DevOps Platform</title>
   <link rel="stylesheet" href="/static/css/dashboard.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
-  <!-- Sidebar Navigation -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="brand-title">
-        <span>Autonomous DevOps</span>
-        <span class="brand-badge">AI CI/CD</span>
-      </div>
-      <div class="brand-subtitle">Intelligent Pipeline Optimization</div>
-    </div>
+  <div class="app-container">
+    <!-- Mobile Sidebar Backdrop -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
-    <ul class="nav-links">
-      <li class="nav-item">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-details">
+          <span class="brand-title">Autonomous DevOps</span>
+          <span class="brand-subtitle">CI/CD Optimization</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Operations & Analytics</div>
+
         <a href="/dashboard/overview" class="nav-link {% if active_page == 'overview' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
           <span>Overview</span>
         </a>
-      </li>
-      <li class="nav-item">
+
         <a href="/dashboard/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
           <span>Pipeline History</span>
         </a>
-      </li>
-      <li class="nav-item">
+
+        <div class="nav-section-title">Intelligent Optimization</div>
+
         <a href="/dashboard/ai-insights" class="nav-link {% if active_page == 'ai_insights' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 1 0 10 10H12V2z"></path>
+            <path d="M12 2a10 10 0 0 1 10 10"></path>
+            <path d="M12 12L2.5 7.5"></path>
+          </svg>
           <span>AI Insights</span>
         </a>
-      </li>
-      <li class="nav-item">
+
         <a href="/dashboard/optimization" class="nav-link {% if active_page == 'optimization' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
           <span>Test Optimization</span>
         </a>
-      </li>
-      <li class="nav-item">
+
         <a href="/dashboard/security" class="nav-link {% if active_page == 'security' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
           <span>Security & Compliance</span>
         </a>
-      </li>
-      <li class="nav-item">
+
+        <div class="nav-section-title">Diagnostics & Health</div>
+
         <a href="/dashboard/observability" class="nav-link {% if active_page == 'observability' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
           <span>Observability</span>
         </a>
-      </li>
-      <li class="nav-item">
+
         <a href="/dashboard/health" class="nav-link {% if active_page == 'health' %}active{% endif %}">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
           <span>System Health</span>
         </a>
-      </li>
-    </ul>
+      </nav>
 
-    <div class="sidebar-footer">
-      <div>AI Predicts. Rules Decide.</div>
-      <div style="margin-top: 4px; color: #475569;">MCA Final Year Project</div>
-    </div>
-  </aside>
-
-  <!-- Main Content Area -->
-  <div class="main-wrapper">
-    <header class="top-bar">
-      <div class="page-title">{% block page_title %}Overview{% endblock %}</div>
-      <div class="top-bar-actions">
-        {% if is_demo_data %}
-          <span class="badge badge-demo">Demonstration Data</span>
-        {% else %}
-          <span class="badge badge-success">Live Pipeline Data</span>
-        {% endif %}
-        <a href="/docs" target="_blank" class="btn btn-outline">API Docs</a>
+      <div class="sidebar-footer">
+        <div class="project-meta-card">
+          <div class="project-meta-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-primary);">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            MCA Capstone Project
+          </div>
+          <div class="project-meta-desc">
+            AI Predicts Probability. Deterministic Safety Rules Decide Execution.
+          </div>
+        </div>
       </div>
-    </header>
+    </aside>
 
-    <main class="content-container">
-      {% block content %}{% endblock %}
-    </main>
+    <!-- Main Content Shell -->
+    <div class="main-wrapper">
+      <!-- Top Sticky Navigation Header -->
+      <header class="top-header">
+        <div class="header-left">
+          <button class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Toggle navigation menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div class="breadcrumbs">
+            <span>Autonomous DevOps</span>
+            <span>/</span>
+            <span class="current">{{ self.title() }}</span>
+          </div>
+        </div>
+
+        <div class="header-right">
+          {% if is_demo_data %}
+            <div class="status-pill demo" title="Running in simulated demonstration mode. Real PostgreSQL schema available.">
+              <span class="pulse-dot"></span>
+              <span>Simulation Demo Mode</span>
+            </div>
+          {% else %}
+            <div class="status-pill" title="Connected to primary database.">
+              <span class="pulse-dot"></span>
+              <span>Production Telemetry Active</span>
+            </div>
+          {% endif %}
+
+          <button id="refreshBtn" class="btn-header" onclick="refreshDashboard()" title="Reload dashboard metrics">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Refresh</span>
+          </button>
+
+          <a href="/docs" target="_blank" class="btn-header primary" title="View OpenAPI Swagger Documentation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span>API Docs</span>
+          </a>
+        </div>
+      </header>
+
+      <!-- Main Page Content Body -->
+      <main class="page-body">
+        <header class="page-header">
+          <div>
+            <h1 class="page-title">{% block page_title %}Executive Pipeline Overview{% endblock %}</h1>
+            <div class="page-description">{% block page_description %}AI-driven test impact analysis, risk prediction, and deterministic fallback enforcement{% endblock %}</div>
+          </div>
+        </header>
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
   </div>
 
   <script src="/static/js/dashboard.js"></script>

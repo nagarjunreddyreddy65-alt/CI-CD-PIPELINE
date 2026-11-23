@@ -2,18 +2,77 @@
 
 {% block title %}Test Optimization{% endblock %}
 {% block page_title %}AST Test Optimization & Selection Engine{% endblock %}
+{% block page_description %}Detailed breakdown of changed files, AST dependency traversal, and deterministic fallback enforcement{% endblock %}
 
 {% block content %}
+<!-- Optimization Summary Cards -->
+<div class="kpi-grid">
+  <div class="kpi-card success">
+    <div class="kpi-header">
+      <span class="kpi-title">Dependency Analysis</span>
+      <span class="badge badge-success">Static AST</span>
+    </div>
+    <div class="kpi-value">Python AST</div>
+    <div class="kpi-trend">
+      <span>Analyzes syntax tree & import graphs</span>
+    </div>
+  </div>
+
+  <div class="kpi-card info">
+    <div class="kpi-header">
+      <span class="kpi-title">Test Mapping Model</span>
+      <span class="badge badge-info">Deterministic</span>
+    </div>
+    <div class="kpi-value">Transitive</div>
+    <div class="kpi-trend">
+      <span>Maps code changes &rarr; affected test nodes</span>
+    </div>
+  </div>
+
+  <div class="kpi-card warning">
+    <div class="kpi-header">
+      <span class="kpi-title">Safety Fallback Guarantee</span>
+      <span class="badge badge-warning">21 Rules</span>
+    </div>
+    <div class="kpi-value">100% Fail-Safe</div>
+    <div class="kpi-trend">
+      <span>Immediate full-suite execution upon any hazard</span>
+    </div>
+  </div>
+</div>
+
+<!-- Optimization Plans Ledger Table -->
 <div class="card">
-  <div class="card-title">Test Reduction & Safety Attribution</div>
-  <div class="card-subtitle">Detailed breakdown of changed files, AST dependency traversal, and deterministic fallback enforcement</div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Test Reduction & Safety Attribution</div>
+      <div class="card-subtitle">Audited record of test selection decisions, reduction percentages, and safety triggers</div>
+    </div>
+  </div>
+
+  <!-- Filter & Search Controls -->
+  <div class="table-controls">
+    <div class="search-input-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" class="search-input table-search-input" data-target-table="optPlansTable" placeholder="Search by commit, rule, or fallback reason...">
+    </div>
+
+    <div class="filter-pills" id="optPlansFilter">
+      <button type="button" class="filter-btn active" data-filter="ALL">All Decisions</button>
+      <button type="button" class="filter-btn" data-filter="OPTIMIZED">Optimized</button>
+      <button type="button" class="filter-btn" data-filter="FULL_SUITE">Full Suite</button>
+    </div>
+  </div>
 
   <div class="table-responsive">
-    <table class="data-table">
+    <table class="data-table" id="optPlansTable">
       <thead>
         <tr>
-          <th>Commit</th>
-          <th>Decision</th>
+          <th>Commit Hash</th>
+          <th>Execution Decision</th>
           <th>Selected Tests</th>
           <th>Total Tests</th>
           <th>Reduction %</th>
@@ -24,7 +83,15 @@
       <tbody>
         {% for plan in optimization_plans %}
         <tr>
-          <td><span class="code-inline">{{ plan.commit_hash[:8] }}</span></td>
+          <td>
+            <a href="#" class="copyable code-inline" data-copy="{{ plan.commit_hash }}" title="Click to copy commit hash">
+              {{ plan.commit_hash[:8] }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </a>
+          </td>
           <td>
             {% if plan.decision == 'OPTIMIZED' %}
               <span class="badge badge-success">OPTIMIZED</span>
@@ -32,27 +99,40 @@
               <span class="badge badge-warning">FULL_SUITE</span>
             {% endif %}
           </td>
-          <td><strong>{{ plan.selected_tests_count }}</strong> tests</td>
-          <td>{{ plan.total_tests_count }} tests</td>
+          <td>
+            <strong style="color: var(--text-primary);">{{ plan.selected_tests_count }}</strong>
+            <span style="color: var(--text-muted); font-size: 0.8rem;">tests</span>
+          </td>
+          <td>
+            <span>{{ plan.total_tests_count }}</span>
+            <span style="color: var(--text-muted); font-size: 0.8rem;">tests</span>
+          </td>
           <td>
             {% if plan.reduction_pct > 0 %}
-              <span class="badge badge-success" style="font-size: 0.8rem;">-{{ plan.reduction_pct }}%</span>
+              <span class="badge badge-success" style="font-weight: 700;">-{{ plan.reduction_pct }}%</span>
             {% else %}
-              <span style="color: var(--text-muted);">0.0%</span>
+              <span style="color: var(--text-muted); font-size: 0.8rem;">0.0%</span>
             {% endif %}
+          </td>
+          <td style="max-width: 320px;">
+            {% if plan.safety_rule_triggered %}
+              <strong style="color: var(--accent-warning-text); display: block; margin-bottom: 2px;">{{ plan.safety_rule_triggered }}</strong>
+            {% endif %}
+            <small style="color: var(--text-secondary); line-height: 1.3; display: block;">{{ plan.decision_reason }}</small>
           </td>
           <td>
-            {% if plan.safety_rule_triggered %}
-              <strong style="color: var(--accent-yellow);">{{ plan.safety_rule_triggered }}</strong><br>
-            {% endif %}
-            <small style="color: var(--text-secondary);">{{ plan.decision_reason }}</small>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">{{ plan.created_at }}</small>
           </td>
-          <td><small style="color: var(--text-muted);">{{ plan.created_at }}</small></td>
         </tr>
         {% else %}
-        <tr>
-          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            No optimization plans generated yet.
+        <tr class="empty-state-row">
+          <td colspan="7" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <polyline points="16 18 22 12 16 6"></polyline>
+              <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">No Optimization Plans Generated Yet</div>
+            <div style="font-size: 0.82rem;">Plans are generated dynamically as commits undergo AST dependency analysis.</div>
           </td>
         </tr>
         {% endfor %}
@@ -61,46 +141,153 @@
   </div>
 </div>
 
+<!-- The 21 Deterministic Safety Policy Fallback Scenarios -->
 <div class="card">
-  <div class="card-title">Deterministic Safety Policy: The 21 Fallback Scenarios</div>
-  <div class="card-subtitle">Mandatory scenarios that immediately force full test suite execution</div>
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; font-size: 0.85rem;">
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>1. Database Migration:</strong> Schema alterations or Alembic scripts
+  <div class="card-header">
+    <div>
+      <div class="card-title">Deterministic Safety Policy: The 21 Fallback Scenarios</div>
+      <div class="card-subtitle">Mandatory scenarios that immediately force full test suite execution (Zero false-negative safety guarantees)</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>2. Auth & Security:</strong> Authentication, tokens, RBAC logic
+  </div>
+
+  <div class="safety-rules-grid">
+    <!-- Category 1: Code Change & File Types (Rules 1-8) -->
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 1 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Database Migration</div>
+      <div class="rule-desc">Schema alterations, Alembic scripts, or migration definitions detected.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>3. Payment & Billing:</strong> Payment gateways, invoicing, currency
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 2 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Auth & Security Logic</div>
+      <div class="rule-desc">Modifications to authentication, tokens, hashing, or RBAC authorization.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>4. Cryptography:</strong> Encryption, hashing, key management
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 3 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Payment & Billing</div>
+      <div class="rule-desc">Payment gateways, invoicing, currency conversions, or financial logic.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>5. Manifest Changes:</strong> requirements.txt, pyproject.toml
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 4 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Cryptography</div>
+      <div class="rule-desc">Encryption, key rotation, certificate handling, or cryptographic primitives.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>6. Lock Files:</strong> uv.lock, poetry.lock, Pipfile.lock
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 5 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Dependency Manifests</div>
+      <div class="rule-desc">Changes to requirements.txt, pyproject.toml, or package configurations.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>7. CI/CD Workflows:</strong> GitHub Actions .github/workflows
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 6 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Lock Files</div>
+      <div class="rule-desc">Changes to poetry.lock, Pipfile.lock, uv.lock, or dependency pins.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>8. Unsupported Files:</strong> Binary, C extensions, shell scripts
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 7 &bull; CODE_CHANGE</div>
+      <div class="rule-name">CI/CD Workflows</div>
+      <div class="rule-desc">Modifications to .github/workflows, pipeline scripts, or CI definitions.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>9. AST Parse Failures:</strong> Syntax errors during parsing
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 8 &bull; CODE_CHANGE</div>
+      <div class="rule-name">Unsupported File Types</div>
+      <div class="rule-desc">Binary assets, compiled C extensions, or untracked file types modified.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>10. Dynamic Imports:</strong> __import__, importlib, eval, exec
+
+    <!-- Category 2: AST & Dependency Graph (Rules 9-13) -->
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 9 &bull; AST_DEPENDENCY</div>
+      <div class="rule-name">AST Parse Failure</div>
+      <div class="rule-desc">Syntax errors or unparseable Python AST expressions encountered.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>11-13. Graph & Mapping:</strong> Disconnected graph, empty test list
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 10 &bull; AST_DEPENDENCY</div>
+      <div class="rule-name">Dynamic Imports</div>
+      <div class="rule-desc">Dynamic __import__, importlib, eval, or exec reflection patterns detected.</div>
     </div>
-    <div style="background: rgba(15,23,42,0.4); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
-      <strong>14-18. ML Safety:</strong> Missing artifact, expired model, <15 runs
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 11 &bull; AST_DEPENDENCY</div>
+      <div class="rule-name">Circular / Disconnected Graph</div>
+      <div class="rule-desc">Circular import loops or disconnected dependency subgraphs discovered.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 12 &bull; AST_DEPENDENCY</div>
+      <div class="rule-name">Unmapped Test Files</div>
+      <div class="rule-desc">Changed source code has no identified or mapped test cases in repository.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 13 &bull; AST_DEPENDENCY</div>
+      <div class="rule-name">Empty Test Selection</div>
+      <div class="rule-desc">Empty selected-test list for non-empty code modification.</div>
+    </div>
+
+    <!-- Category 3: Machine Learning Guardrails (Rules 14-18) -->
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 14 &bull; MACHINE_LEARNING</div>
+      <div class="rule-name">Model Artifact Missing</div>
+      <div class="rule-desc">Serialized .joblib model files missing, unreadable, or corrupted.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 15 &bull; MACHINE_LEARNING</div>
+      <div class="rule-name">Model Version Mismatch</div>
+      <div class="rule-desc">Model version does not match active pipeline schema or is expired.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 16 &bull; MACHINE_LEARNING</div>
+      <div class="rule-name">Invalid Prediction Output</div>
+      <div class="rule-desc">ML prediction output is NaN, infinite, or outside [0.0, 1.0] bounds.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 17 &bull; MACHINE_LEARNING</div>
+      <div class="rule-name">Insufficient Training Data</div>
+      <div class="rule-desc">Historical dataset contains fewer than 15 validated pipeline runs.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 18 &bull; MACHINE_LEARNING</div>
+      <div class="rule-name">Low Confidence Score</div>
+      <div class="rule-desc">Prediction confidence below minimum safety threshold (&lt; 0.70).</div>
+    </div>
+
+    <!-- Category 4: Infrastructure & Environment (Rules 19-21) -->
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 19 &bull; INFRASTRUCTURE</div>
+      <div class="rule-name">Optimization API Down</div>
+      <div class="rule-desc">Optimization backend unreachable, timed out, or returned 5xx HTTP error.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 20 &bull; INFRASTRUCTURE</div>
+      <div class="rule-name">GitHub API Failure</div>
+      <div class="rule-desc">GitHub commit diff API rate limit exceeded or network retry exhausted.</div>
+    </div>
+
+    <div class="safety-rule-card">
+      <div class="rule-number-badge">Rule 21 &bull; INFRASTRUCTURE</div>
+      <div class="rule-name">Unverifiable Safety State</div>
+      <div class="rule-desc">Unhandled exception or ambiguous condition during safety policy evaluation.</div>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    initStatusFilter("optPlansFilter", "optPlansTable", 1);
+  });
+</script>
 {% endblock %}

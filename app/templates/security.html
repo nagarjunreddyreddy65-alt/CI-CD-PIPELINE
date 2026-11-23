@@ -2,71 +2,153 @@
 
 {% block title %}Security & Compliance{% endblock %}
 {% block page_title %}Security Scanners & Secret Protection Audit{% endblock %}
+{% block page_description %}Multi-layer vulnerability scanning, AST-based SAST, SCA dependency audit, and automated credential leakage redaction{% endblock %}
 
 {% block content %}
+<!-- Security Posture KPI Grid -->
 <div class="kpi-grid">
-  <div class="kpi-card">
+  <!-- Total Security Scans -->
+  <div class="kpi-card info">
     <div class="kpi-header">
-      <span>Total Security Scans</span>
+      <span class="kpi-title">Total Security Scans</span>
       <span class="badge badge-info">Audited</span>
     </div>
     <div class="kpi-value">{{ security_summary.total_scans }}</div>
-    <div class="kpi-trend">Bandit, pip-audit & Gitleaks</div>
+    <div class="kpi-trend">
+      <span>Bandit SAST, pip-audit & Gitleaks</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Releases Blocked -->
+  <div class="kpi-card danger">
     <div class="kpi-header">
-      <span>Releases Blocked</span>
+      <span class="kpi-title">Releases Blocked</span>
       <span class="badge badge-failed">Policy Guard</span>
     </div>
-    <div class="kpi-value" style="color: var(--accent-red);">{{ security_summary.blocked_releases }}</div>
-    <div class="kpi-trend">High/Critical findings blocked</div>
+    <div class="kpi-value">{{ security_summary.blocked_releases }}</div>
+    <div class="kpi-trend">
+      <span>High & Critical security findings quarantined</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Secret Leaks Detected -->
+  <div class="kpi-card warning">
     <div class="kpi-header">
-      <span>Secret Leaks Detected</span>
+      <span class="kpi-title">Secret Leaks Detected</span>
       <span class="badge badge-warning">Gitleaks</span>
     </div>
-    <div class="kpi-value" style="color: {% if security_summary.secret_leaks > 0 %}var(--accent-red){% else %}var(--accent-green){% endif %};">
+    <div class="kpi-value" style="color: {% if security_summary.secret_leaks > 0 %}var(--accent-danger-text){% else %}var(--accent-success-text){% endif %};">
       {{ security_summary.secret_leaks }}
     </div>
-    <div class="kpi-trend">All tokens redacted in storage</div>
+    <div class="kpi-trend">
+      <span>All tokens redacted prior to storage</span>
+    </div>
   </div>
 
-  <div class="kpi-card">
+  <!-- Compliance Integrity -->
+  <div class="kpi-card success">
     <div class="kpi-header">
-      <span>Security Compliance</span>
+      <span class="kpi-title">Security Compliance</span>
       <span class="badge badge-success">Active</span>
     </div>
-    <div class="kpi-value" style="color: var(--accent-green); font-size: 1.5rem;">
+    <div class="kpi-value" style="font-size: 1.5rem; color: var(--accent-success-text);">
       100% Redacted
     </div>
-    <div class="kpi-trend">Zero plaintext credentials</div>
+    <div class="kpi-trend">
+      <span>Zero plaintext credentials persisted</span>
+    </div>
   </div>
 </div>
 
+<!-- Security Tooling Suite Architecture -->
+<div class="model-grid" style="margin-bottom: 24px;">
+  <div class="model-card">
+    <div class="model-header">
+      <strong style="font-size: 0.95rem; color: var(--text-primary);">Bandit (SAST)</strong>
+      <span class="badge badge-info">Static Analysis</span>
+    </div>
+    <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">
+      AST scanner inspecting source code for common security flaws, injection vectors, weak cryptography, and unsafe serialization.
+    </div>
+    <div class="model-meta-item">
+      <span class="model-meta-label">Enforcement:</span>
+      <span class="model-meta-val" style="color: var(--accent-danger-text);">Blocks High/Critical</span>
+    </div>
+  </div>
+
+  <div class="model-card">
+    <div class="model-header">
+      <strong style="font-size: 0.95rem; color: var(--text-primary);">pip-audit (SCA)</strong>
+      <span class="badge badge-purple">Supply Chain</span>
+    </div>
+    <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">
+      Audits Python dependency manifests and lockfiles against the Open Source Vulnerabilities (OSV) and PyPI advisory databases.
+    </div>
+    <div class="model-meta-item">
+      <span class="model-meta-label">Enforcement:</span>
+      <span class="model-meta-val" style="color: var(--accent-danger-text);">Blocks Known CVEs</span>
+    </div>
+  </div>
+
+  <div class="model-card">
+    <div class="model-header">
+      <strong style="font-size: 0.95rem; color: var(--text-primary);">Gitleaks (Secrets)</strong>
+      <span class="badge badge-warning">Token Guard</span>
+    </div>
+    <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">
+      Regex and entropy analysis preventing commit leaks of API keys, private tokens, passwords, and private SSH credentials.
+    </div>
+    <div class="model-meta-item">
+      <span class="model-meta-label">Sanitization:</span>
+      <span class="model-meta-val" style="color: var(--accent-success-text);">Automatic Redaction</span>
+    </div>
+  </div>
+</div>
+
+<!-- Security Scan Audit Ledger Table -->
 <div class="card">
-  <div class="card-title">Security Scan Audit Ledger</div>
-  <div class="card-subtitle">Comprehensive record of SAST, SCA, and Secret scanning reports</div>
+  <div class="card-header">
+    <div>
+      <div class="card-title">Security Scan Audit Ledger</div>
+      <div class="card-subtitle">Comprehensive record of SAST, SCA, and Secret scanning reports with release gate status</div>
+    </div>
+  </div>
+
+  <!-- Filter & Search Controls -->
+  <div class="table-controls">
+    <div class="search-input-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" class="search-input table-search-input" data-target-table="securityScansTable" placeholder="Search by tool name, severity, or summary...">
+    </div>
+
+    <div class="filter-pills" id="securityFilter">
+      <button type="button" class="filter-btn active" data-filter="ALL">All Scans</button>
+      <button type="button" class="filter-btn" data-filter="PASSED">Passed</button>
+      <button type="button" class="filter-btn" data-filter="FAILED">Failed</button>
+      <button type="button" class="filter-btn" data-filter="WARNING">Warning</button>
+    </div>
+  </div>
 
   <div class="table-responsive">
-    <table class="data-table">
+    <table class="data-table" id="securityScansTable">
       <thead>
         <tr>
-          <th>Tool Name</th>
-          <th>Status</th>
+          <th>Scanner Tool</th>
+          <th>Execution Status</th>
           <th>Highest Severity</th>
           <th>Findings Count</th>
-          <th>Summary</th>
-          <th>Action Taken</th>
+          <th>Report Summary</th>
+          <th>Release Gate Action</th>
           <th>Executed At</th>
         </tr>
       </thead>
       <tbody>
         {% for scan in security_scans %}
         <tr>
-          <td><strong>{{ scan.tool_name }}</strong></td>
+          <td><strong style="color: var(--text-primary);">{{ scan.tool_name }}</strong></td>
           <td>
             {% if scan.status == 'PASSED' %}
               <span class="badge badge-success">Passed</span>
@@ -85,21 +167,42 @@
               <span class="badge badge-info">{{ scan.highest_severity }}</span>
             {% endif %}
           </td>
-          <td>{{ scan.findings_count }}</td>
-          <td>{{ scan.summary }}</td>
+          <td>
+            <span style="font-weight: 600; font-variant-numeric: tabular-nums;">{{ scan.findings_count }}</span>
+          </td>
+          <td style="max-width: 300px;">
+            <span style="color: var(--text-secondary); font-size: 0.82rem;">{{ scan.summary }}</span>
+          </td>
           <td>
             {% if scan.highest_severity in ('HIGH', 'CRITICAL') or scan.status == 'FAILED' %}
-              <strong style="color: var(--accent-red);">Release Blocked</strong>
+              <strong style="color: var(--accent-danger-text); display: inline-flex; align-items: center; gap: 4px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                </svg>
+                Release Blocked
+              </strong>
             {% else %}
-              <span style="color: var(--accent-green);">Release Approved</span>
+              <span style="color: var(--accent-success-text); display: inline-flex; align-items: center; gap: 4px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Release Approved
+              </span>
             {% endif %}
           </td>
-          <td><small style="color: var(--text-muted);">{{ scan.executed_at }}</small></td>
+          <td>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">{{ scan.executed_at }}</small>
+          </td>
         </tr>
         {% else %}
-        <tr>
-          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            No security scans recorded yet.
+        <tr class="empty-state-row">
+          <td colspan="7" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">No Security Scans Recorded Yet</div>
+            <div style="font-size: 0.82rem;">Security checks run automatically during CI pipeline execution.</div>
           </td>
         </tr>
         {% endfor %}
@@ -107,4 +210,12 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    initStatusFilter("securityFilter", "securityScansTable", 1);
+  });
+</script>
 {% endblock %}
