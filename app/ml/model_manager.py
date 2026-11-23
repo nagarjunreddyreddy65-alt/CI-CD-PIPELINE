@@ -183,11 +183,14 @@ class ModelManager:
         self.runtime_predictor = RuntimePredictor()
         self.metadata_path = os.path.join(self.registry_dir, "model_metadata.json")
 
-    @staticmethod
-    def _compute_file_sha256(path: str) -> str:
+    def _compute_file_sha256(self, path: str) -> str:
         """Computes SHA-256 checksum of a file for artifact integrity validation."""
+        base_real = os.path.realpath(self.registry_dir)
+        target_real = os.path.realpath(path)
+        if os.path.commonpath([base_real, target_real]) != base_real:
+            raise Exception("Invalid file path")
         hasher = hashlib.sha256()
-        with open(path, "rb") as f:
+        with open(target_real, "rb") as f:
             while chunk := f.read(8192):
                 hasher.update(chunk)
         return hasher.hexdigest()
