@@ -30,8 +30,15 @@ def get_engine():
             max_overflow=25,
         )
 
-    # 2. Testing environment or local development with optional SQLite fallback
-    if settings.ENVIRONMENT == "testing" or settings.USE_SQLITE_FALLBACK:
+    # 2. Testing environment - use SQLite directly for fast, isolated test execution
+    if settings.ENVIRONMENT == "testing":
+        return create_engine(
+            settings.SQLITE_FALLBACK_URL,
+            connect_args={"check_same_thread": False},
+        )
+
+    # 3. Local development with optional SQLite fallback
+    if settings.USE_SQLITE_FALLBACK:
         try:
             # First attempt connecting to PostgreSQL
             engine = create_engine(

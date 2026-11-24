@@ -2,6 +2,8 @@
 API Tests for Security Scanning and Telemetry Endpoints.
 """
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -31,7 +33,13 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(scope="module", autouse=True)
+def setup_db_override():
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
+
+
 client = TestClient(app)
 client.headers.update({"X-Runner-Token": settings.RUNNER_API_KEY})
 
@@ -150,6 +158,76 @@ def test_api_record_telemetry():
     assert data["success"] is True
     assert data["cpu_percent_avg"] == 45.2
     assert data["memory_mb_peak"] == 192.5
+
+
+def test_api_record_telemetry_invalid_status_rejected_422():
+    """Verifies that unapproved status values are rejected with HTTP 422 Unprocessable Entity."""
+    payload = {
+        "pipeline_run_id": "test-run-sec-001",
+        "cpu_percent_avg": 40.0,
+        "memory_mb_peak": 150.0,
+        "status": "INVALID_UNKNOWN_STATUS",
+    }
+    res = client.post("/api/v1/telemetry/record", json=payload)
+    assert res.status_code == 422
+
+
+def test_api_record_telemetry_terminal_lock_prevents_rollback_to_running():
+    """
+    Verifies that a completed terminal execution (SUCCESS/FAILED/ABORTED) cannot be reverted
+    back to RUNNING by late or misordered telemetry payloads.
+    """
+    db = TestingSessionLocal()
+    unique_run_id = f"term-lock-{uuid.uuid4().hex[:8]}"
+    isolated_run = PipelineRun(
+        id=unique_run_id,
+        repository_id="isolated-repo-id",
+        workflow_name="Terminal Lock CI",
+        status="RUNNING",
+    )
+    db.add(isolated_run)
+    db.commit()
+    db.close()
+
+    # 1. Transition to terminal FAILED status
+    fail_payload = {
+        "pipeline_run_id": unique_run_id,
+        "cpu_percent_avg": 35.0,
+        "memory_mb_peak": 140.0,
+        "status": "FAILED",
+    }
+    res1 = client.post("/api/v1/telemetry/record", json=fail_payload)
+    assert res1.status_code == 201
+
+    # 2. Attempt rollback to RUNNING
+    run_payload = {
+        "pipeline_run_id": unique_run_id,
+        "cpu_percent_avg": 36.0,
+        "memory_mb_peak": 142.0,
+        "status": "RUNNING",
+    }
+    res2 = client.post("/api/v1/telemetry/record", json=run_payload)
+    assert res2.status_code == 201
+
+    # 3. Query DB to confirm status remained FAILED
+    db = TestingSessionLocal()
+    run = db.query(PipelineRun).filter(PipelineRun.id == unique_run_id).first()
+    assert run is not None
+    assert run.status == "FAILED"
+    db.close()
+
+
+def test_api_record_telemetry_supported_lifecycle_statuses():
+    """Verifies that all supported PipelineLifecycleStatus enum values are accepted."""
+    for st in ["RUNNING", "SUCCESS", "FAILED", "ABORTED", "CANCELLED"]:
+        payload = {
+            "pipeline_run_id": "test-run-sec-001",
+            "cpu_percent_avg": 25.0,
+            "memory_mb_peak": 110.0,
+            "status": st,
+        }
+        res = client.post("/api/v1/telemetry/record", json=payload)
+        assert res.status_code == 201
 
 
 def test_api_detect_anomalies():

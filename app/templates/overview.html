@@ -17,6 +17,12 @@
     <div class="kpi-trend">
       <span class="badge badge-success" style="font-size: 0.72rem;">{{ kpis.successful_runs }} passed</span>
       <span class="badge badge-failed" style="font-size: 0.72rem;">{{ kpis.failed_runs }} failed</span>
+      {% if kpis.aborted_runs > 0 %}
+        <span class="badge badge-warning" style="font-size: 0.72rem;">{{ kpis.aborted_runs }} aborted</span>
+      {% endif %}
+      {% if kpis.running_runs > 0 %}
+        <span class="badge badge-info" style="font-size: 0.72rem;">{{ kpis.running_runs }} running</span>
+      {% endif %}
     </div>
   </div>
 
@@ -28,8 +34,9 @@
     </div>
     <div class="kpi-value">{{ kpis.optimization_rate }}%</div>
     <div class="kpi-trend">
-      <span>{{ kpis.optimized_runs }} optimized</span> &bull; 
-      <span>{{ kpis.fallback_runs }} fallback</span>
+      <span>{{ kpis.optimized_runs }} planned opt</span> &bull; 
+      <span>{{ kpis.fallback_runs }} fallback</span> &bull;
+      <span>{{ kpis.unplanned_runs }} direct</span>
     </div>
   </div>
 
@@ -37,11 +44,11 @@
   <div class="kpi-card info">
     <div class="kpi-header">
       <span class="kpi-title">Avg Execution Time</span>
-      <span class="badge badge-purple">Latency</span>
+      <span class="badge badge-purple">Completed Runs</span>
     </div>
     <div class="kpi-value">{{ kpis.avg_duration_sec }}s</div>
     <div class="kpi-trend">
-      <span>Mean duration per pipeline run</span>
+      <span>Mean of {{ kpis.completed_runs_count }} completed runs (dur > 0s)</span>
     </div>
   </div>
 
@@ -49,11 +56,11 @@
   <div class="kpi-card success">
     <div class="kpi-header">
       <span class="kpi-title">Estimated Time Saved</span>
-      <span class="badge badge-success">Compute ROI</span>
+      <span class="badge badge-success">Model Estimate</span>
     </div>
     <div class="kpi-value">{{ kpis.time_saved_sec }}s</div>
     <div class="kpi-trend">
-      <span>Estimated (20.0s standard suite baseline)</span>
+      <span>Estimated (20.0s standard suite baseline) &times; reduction %, N={{ kpis.optimized_runs }} plans</span>
     </div>
   </div>
 </div>
@@ -110,6 +117,7 @@
       <button type="button" class="filter-btn active" data-filter="ALL">All Runs</button>
       <button type="button" class="filter-btn" data-filter="PASSED">Passed</button>
       <button type="button" class="filter-btn" data-filter="FAILED">Failed</button>
+      <button type="button" class="filter-btn" data-filter="ABORTED">Aborted</button>
       <button type="button" class="filter-btn" data-filter="OPTIMIZED">Optimized</button>
       <button type="button" class="filter-btn" data-filter="FULL SUITE">Full Suite</button>
     </div>
@@ -161,10 +169,14 @@
             <span style="font-variant-numeric: tabular-nums; font-weight: 600;">{{ run.duration_sec }}s</span>
           </td>
           <td>
-            {% if run.is_optimized %}
+            {% if run.decision == 'OPTIMIZED' %}
               <span class="badge badge-success">Optimized</span>
+            {% elif run.decision == 'FULL_SUITE' %}
+              <span class="badge badge-purple">Full Suite</span>
+            {% elif run.decision == 'RUNNING' %}
+              <span class="badge badge-warning">Running</span>
             {% else %}
-              <span class="badge badge-warning">Full Suite</span>
+              <span class="badge badge-neutral">Direct Suite</span>
             {% endif %}
           </td>
           <td>
@@ -204,7 +216,8 @@
     const durationData = {{ chart_durations | tojson }};
     const optCount = {{ kpis.optimized_runs }};
     const fallCount = {{ kpis.fallback_runs }};
-    initOverviewCharts(trendLabels, durationData, optCount, fallCount);
+    const unplCount = {{ kpis.unplanned_runs }};
+    initOverviewCharts(trendLabels, durationData, optCount, fallCount, unplCount);
     initStatusFilter("recentRunsStatusFilter", "recentRunsTable", 2);
   });
 </script>

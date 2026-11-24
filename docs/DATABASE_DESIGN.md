@@ -58,4 +58,4 @@ The persistence layer utilizes **PostgreSQL 16** with **SQLAlchemy 2.0 ORM** and
 11. **`model_versions`**: Registered ML models with evaluation metrics (F1-score, accuracy, MAE).
 12. **`security_scans`**: Findings summary from Bandit, pip-audit, and Gitleaks.
 13. **`deployments`**: Deployment event records with environment, approval, and status.
-14. **`audit_logs`**: Immutable security and safety event logs.
+14. **`audit_logs`**: Append-only security and safety event logs.

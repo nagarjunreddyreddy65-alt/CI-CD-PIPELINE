@@ -41,6 +41,57 @@ templates = Jinja2Templates(directory=TEMPLATE_DIR)
 _model_manager_singleton: ModelManager | None = None
 
 
+def determine_execution_attribution(run: PipelineRun) -> tuple[str, bool, bool, int, int, str]:
+    """
+    Deterministically attributes execution decision, flags, test counts, and reason.
+    Returns: (decision, is_optimized, is_fallback, selected_tests, total_tests, decision_reason)
+
+    Guarantees:
+    - Never labels a run as 'OPTIMIZED' unless an execution plan explicitly authorized it AND selected_tests > 0.
+    - Accurately attributes 'FULL_SUITE' if plan mandated it or fallback_triggered is True.
+    - Accurately attributes 'RUNNING' for in-progress runs without a completed plan.
+    - Accurately attributes 'UNPLANNED' for baseline/direct executions without an AST plan.
+    """
+    plan = run.execution_plan
+    if plan is not None:
+        selected_count = plan.selected_tests_count
+        total_count = plan.total_tests_count
+        dec_reason = plan.decision_reason
+        if plan.decision == "OPTIMIZED" and selected_count > 0:
+            return "OPTIMIZED", True, False, selected_count, total_count, dec_reason
+        else:
+            return "FULL_SUITE", False, True, selected_count, total_count, dec_reason
+    else:
+        # No plan entity attached
+        if run.fallback_triggered:
+            return (
+                "FULL_SUITE",
+                False,
+                True,
+                0,
+                0,
+                run.fallback_reason or "Deterministic safety fallback enforced",
+            )
+        elif run.status == "RUNNING":
+            return (
+                "RUNNING",
+                False,
+                False,
+                0,
+                0,
+                "Execution currently in progress",
+            )
+        else:
+            return (
+                "UNPLANNED",
+                False,
+                False,
+                0,
+                0,
+                "Direct execution without optimization plan",
+            )
+
+
 def get_model_manager(request: Request | None = None) -> ModelManager:
     """
     Retrieves the verified ModelManager from app.state or a lazily-loaded singleton.
@@ -75,64 +126,80 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
     runs = db.query(PipelineRun).order_by(PipelineRun.created_at.desc()).all()
     total_runs = len(runs)
     successful_runs = sum(1 for r in runs if r.status == "SUCCESS")
-    failed_runs = sum(1 for r in runs if r.status in ("FAILED", "ABORTED"))
-    optimized_runs = sum(1 for r in runs if r.is_optimized)
-    fallback_runs = sum(1 for r in runs if r.fallback_triggered)
+    failed_runs = sum(1 for r in runs if r.status == "FAILED")
+    aborted_runs = sum(1 for r in runs if r.status == "ABORTED")
+    running_runs = sum(1 for r in runs if r.status == "RUNNING")
 
-    # Calculate average duration across runs with recorded duration > 0, fallback to all runs
-    completed_durations = [r.total_duration_sec for r in runs if r.total_duration_sec > 0]
+    # Execution attribution across all runs
+    planned_optimized_runs = 0
+    fallback_runs = 0
+    unplanned_runs = 0
+
+    recent_runs = []
+    for r in runs:
+        decision, is_opt, is_fb, sel_count, tot_count, dec_reason = determine_execution_attribution(
+            r
+        )
+        if decision == "OPTIMIZED":
+            planned_optimized_runs += 1
+        elif decision == "FULL_SUITE":
+            fallback_runs += 1
+        else:
+            unplanned_runs += 1
+
+        if len(recent_runs) < 10:
+            repo_name = r.repository.name if r.repository else "AutonomousDevOps/CI-CD-PIPELINE"
+            commit_hash = r.commit.commit_hash if r.commit else "local-commit"
+            recent_runs.append(
+                {
+                    "id": r.id,
+                    "repository_name": repo_name,
+                    "commit_hash": commit_hash,
+                    "status": r.status,
+                    "duration_sec": r.total_duration_sec,
+                    "decision": decision,
+                    "is_optimized": is_opt,
+                    "fallback_triggered": is_fb,
+                    "selected_tests": sel_count,
+                    "total_tests": tot_count,
+                    "decision_reason": dec_reason,
+                    "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
+                }
+            )
+
+    # Calculate average duration across clearly defined completed runs (status in SUCCESS, FAILED with duration > 0)
+    # Strictly excludes RUNNING runs (duration 0.0s) and invalid/aborted duration records
+    completed_runs = [
+        r for r in runs if r.status in ("SUCCESS", "FAILED") and r.total_duration_sec > 0
+    ]
     avg_duration = (
-        round(sum(completed_durations) / max(1, len(completed_durations)), 2)
-        if completed_durations
+        round(sum(r.total_duration_sec for r in completed_runs) / max(1, len(completed_runs)), 2)
+        if completed_runs
         else 0.0
     )
-    optimization_rate = round((optimized_runs / max(1, total_runs)) * 100.0, 1)
+
+    # Optimization rate: percentage of planned optimized runs across all audited runs
+    optimization_rate = round((planned_optimized_runs / max(1, total_runs)) * 100.0, 1)
     fallback_rate = round((fallback_runs / max(1, total_runs)) * 100.0, 1)
 
-    # Estimate time saved: modeled on standard 20.0s test suite baseline
+    # Estimated time saved: modeled on standard 20.0s test suite baseline across eligible OPTIMIZED plans
     plans = db.query(ExecutionPlan).all()
+    opt_plans = [p for p in plans if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0]
     estimated_time_saved_total = round(
-        sum(
-            20.0 * (p.tests_reduction_pct / 100.0)
-            for p in plans
-            if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0
-        ),
+        sum(20.0 * (p.tests_reduction_pct / 100.0) for p in opt_plans),
         1,
     )
     # Measured empirical time saved: actual differences from completed runs with telemetry duration > 0
     measured_time_saved_total = round(
         sum(
             max(0.0, 20.0 - r.total_duration_sec)
-            for r in runs
-            if r.is_optimized and r.status == "SUCCESS" and r.total_duration_sec > 0
+            for r in completed_runs
+            if r.status == "SUCCESS"
+            and r.execution_plan
+            and r.execution_plan.decision == "OPTIMIZED"
         ),
         1,
     )
-
-    # Recent runs table
-    recent_runs = []
-    for r in runs[:10]:
-        repo_name = r.repository.name if r.repository else "AutonomousDevOps/CI-CD-PIPELINE"
-        commit_hash = r.commit.commit_hash if r.commit else "local-commit"
-        plan = r.execution_plan
-        sel_count = plan.selected_tests_count if plan else 0
-        tot_count = plan.total_tests_count if plan else 0
-        dec_reason = plan.decision_reason if plan else "Standard Execution"
-
-        recent_runs.append(
-            {
-                "id": r.id,
-                "repository_name": repo_name,
-                "commit_hash": commit_hash,
-                "status": r.status,
-                "duration_sec": r.total_duration_sec,
-                "is_optimized": r.is_optimized,
-                "selected_tests": sel_count,
-                "total_tests": tot_count,
-                "decision_reason": dec_reason,
-                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
-            }
-        )
 
     # Chart data
     chart_labels = [f"Run {i + 1}" for i in range(min(10, total_runs))]
@@ -149,8 +216,12 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
                 "total_runs": total_runs,
                 "successful_runs": successful_runs,
                 "failed_runs": failed_runs,
-                "optimized_runs": optimized_runs,
+                "aborted_runs": aborted_runs,
+                "running_runs": running_runs,
+                "completed_runs_count": len(completed_runs),
+                "optimized_runs": planned_optimized_runs,
                 "fallback_runs": fallback_runs,
+                "unplanned_runs": unplanned_runs,
                 "avg_duration_sec": avg_duration,
                 "time_saved_sec": estimated_time_saved_total,
                 "measured_time_saved_sec": measured_time_saved_total,
@@ -175,6 +246,9 @@ def get_history_page(request: Request, db: Session = Depends(get_db)):
         repo_name = r.repository.name if r.repository else "AutonomousDevOps/CI-CD-PIPELINE"
         commit = r.commit
         plan = r.execution_plan
+        decision, is_opt, is_fb, sel_count, tot_count, dec_reason = determine_execution_attribution(
+            r
+        )
 
         history_runs.append(
             {
@@ -186,11 +260,13 @@ def get_history_page(request: Request, db: Session = Depends(get_db)):
                 "commit_message": commit.message if commit else "Commit update",
                 "status": r.status,
                 "duration_sec": r.total_duration_sec,
-                "selected_tests": plan.selected_tests_count if plan else 0,
-                "total_tests": plan.total_tests_count if plan else 0,
+                "decision": decision,
+                "is_optimized": is_opt,
+                "fallback_triggered": is_fb,
+                "selected_tests": sel_count,
+                "total_tests": tot_count,
                 "reduction_pct": plan.tests_reduction_pct if plan else 0.0,
-                "is_optimized": r.is_optimized,
-                "decision_reason": plan.decision_reason if plan else "Standard Execution",
+                "decision_reason": dec_reason,
                 "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else "-",
             }
         )
@@ -361,35 +437,47 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
     chart_mem = [t.memory_mb_peak for t in reversed(telemetries[:15])]
 
     # Anomaly Detection using Statistical Baselines (Z-score >= 2.5)
-    detector = StatisticalAnomalyDetector(min_historical_samples=3)
+    # Strictly enforces minimum sample window (5 samples) before reporting healthy baseline
+    MIN_REQUIRED_SAMPLES = 5
+    detector = StatisticalAnomalyDetector(min_historical_samples=MIN_REQUIRED_SAMPLES)
     anomalies_count = 0
     anomaly_status = "PENDING_TELEMETRY"
     anomaly_findings = []
 
-    if total_records >= 3:
-        current_t = telemetries[0]
-        curr_dur = current_t.pipeline_run.total_duration_sec if current_t.pipeline_run else 0.0
-        current_run_metrics = {
-            "duration_sec": curr_dur,
-            "memory_mb_peak": current_t.memory_mb_peak,
-            "cpu_percent_avg": current_t.cpu_percent_avg,
-        }
-        hist_metrics = []
-        for t in telemetries[1:]:
-            t_dur = t.pipeline_run.total_duration_sec if t.pipeline_run else 0.0
-            hist_metrics.append(
-                {
-                    "duration_sec": t_dur,
-                    "memory_mb_peak": t.memory_mb_peak,
-                    "cpu_percent_avg": t.cpu_percent_avg,
-                }
-            )
-        report = detector.detect_anomalies(current_run_metrics, hist_metrics)
-        anomalies_count = len(report.anomalies)
-        anomaly_status = "ANOMALIES_DETECTED" if report.is_anomalous else "HEALTHY"
-        anomaly_findings = [f.message for f in report.anomalies]
-    elif total_records > 0:
+    if total_records > 1:
+        hist_count = total_records - 1
+        if hist_count >= MIN_REQUIRED_SAMPLES:
+            current_t = telemetries[0]
+            curr_dur = current_t.pipeline_run.total_duration_sec if current_t.pipeline_run else 0.0
+            current_run_metrics = {
+                "duration_sec": curr_dur,
+                "memory_mb_peak": current_t.memory_mb_peak,
+                "cpu_percent_avg": current_t.cpu_percent_avg,
+            }
+            hist_metrics = []
+            for t in telemetries[1:]:
+                t_dur = t.pipeline_run.total_duration_sec if t.pipeline_run else 0.0
+                hist_metrics.append(
+                    {
+                        "duration_sec": t_dur,
+                        "memory_mb_peak": t.memory_mb_peak,
+                        "cpu_percent_avg": t.cpu_percent_avg,
+                    }
+                )
+            report = detector.detect_anomalies(current_run_metrics, hist_metrics)
+            anomalies_count = len(report.anomalies)
+            anomaly_status = "ANOMALIES_DETECTED" if report.is_anomalous else "HEALTHY"
+            anomaly_findings = [f.message for f in report.anomalies]
+        else:
+            anomaly_status = "INSUFFICIENT_SAMPLES"
+            anomaly_findings = [
+                f"Insufficient historical telemetry records ({hist_count}/{MIN_REQUIRED_SAMPLES} required) to establish statistical baseline."
+            ]
+    elif total_records == 1:
         anomaly_status = "INSUFFICIENT_SAMPLES"
+        anomaly_findings = [
+            f"Single telemetry record observed (0/{MIN_REQUIRED_SAMPLES} historical samples required)."
+        ]
     else:
         anomaly_status = "PENDING_TELEMETRY"
 
@@ -428,6 +516,7 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
             "anomaly_status": anomaly_status,
             "anomaly_findings": anomaly_findings,
             "total_telemetry_records": total_records,
+            "min_required_samples": MIN_REQUIRED_SAMPLES,
             "correlated_groups": [g.to_dict() for g in groups],
             "telemetry_chart_labels": chart_labels,
             "telemetry_chart_cpu": chart_cpu,
@@ -468,15 +557,52 @@ def get_dashboard_metrics(db: Session = Depends(get_db)):
     total_runs = len(runs)
     successful_runs = sum(1 for r in runs if r.status == "SUCCESS")
     failed_runs = sum(1 for r in runs if r.status == "FAILED")
-    optimized_runs = sum(1 for r in runs if r.is_optimized)
-    fallback_runs = sum(1 for r in runs if r.fallback_triggered)
+    aborted_runs = sum(1 for r in runs if r.status == "ABORTED")
+    running_runs = sum(1 for r in runs if r.status == "RUNNING")
+
+    planned_optimized_runs = sum(
+        1
+        for r in runs
+        if r.execution_plan
+        and r.execution_plan.decision == "OPTIMIZED"
+        and r.execution_plan.selected_tests_count > 0
+    )
+    fallback_runs = sum(
+        1
+        for r in runs
+        if r.fallback_triggered or (r.execution_plan and r.execution_plan.decision == "FULL_SUITE")
+    )
+    unplanned_runs = total_runs - (planned_optimized_runs + fallback_runs)
+
+    completed_runs = [
+        r for r in runs if r.status in ("SUCCESS", "FAILED") and r.total_duration_sec > 0
+    ]
+    avg_duration = (
+        round(sum(r.total_duration_sec for r in completed_runs) / max(1, len(completed_runs)), 2)
+        if completed_runs
+        else 0.0
+    )
+
+    plans = db.query(ExecutionPlan).all()
+    opt_plans = [p for p in plans if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0]
+    estimated_time_saved_total = round(
+        sum(20.0 * (p.tests_reduction_pct / 100.0) for p in opt_plans),
+        1,
+    )
 
     return {
         "total_runs": total_runs,
         "successful_runs": successful_runs,
         "failed_runs": failed_runs,
-        "optimized_runs": optimized_runs,
+        "aborted_runs": aborted_runs,
+        "running_runs": running_runs,
+        "completed_runs_count": len(completed_runs),
+        "avg_duration_sec": avg_duration,
+        "estimated_time_saved_sec": estimated_time_saved_total,
+        "planned_optimized_runs": planned_optimized_runs,
+        "optimized_runs": planned_optimized_runs,
         "fallback_runs": fallback_runs,
-        "optimization_rate_pct": round((optimized_runs / max(1, total_runs)) * 100.0, 1),
+        "unplanned_runs": unplanned_runs,
+        "optimization_rate_pct": round((planned_optimized_runs / max(1, total_runs)) * 100.0, 1),
         "fallback_rate_pct": round((fallback_runs / max(1, total_runs)) * 100.0, 1),
     }

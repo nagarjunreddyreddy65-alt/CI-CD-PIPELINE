@@ -117,5 +117,74 @@ def test_api_dashboard_metrics(client):
     assert res.status_code == 200
     data = res.json()
     assert data["total_runs"] >= 1
-    assert data["successful_runs"] >= 1
+    # Priority 1: Exact reconciliation of statuses with total runs
+    assert data["total_runs"] == (
+        data["successful_runs"] + data["failed_runs"] + data["aborted_runs"] + data["running_runs"]
+    )
+    # Priority 1: Exact reconciliation of execution modes with total runs
+    assert data["total_runs"] == (
+        data["planned_optimized_runs"] + data["fallback_runs"] + data["unplanned_runs"]
+    )
     assert "optimization_rate_pct" in data
+    assert "completed_runs_count" in data
+
+
+def test_dashboard_incomplete_running_records_not_attributed_as_optimized(client, db_session):
+    """
+    Priority 2: Verifies that running/unplanned records with 0 selected tests
+    are never falsely attributed as 'Optimized'.
+    """
+    repo = db_session.query(Repository).first()
+    commit = db_session.query(Commit).first()
+
+    running_run = PipelineRun(
+        id="dash-run-running-test",
+        repository_id=repo.id,
+        commit_id=commit.id,
+        workflow_name="CI Test",
+        status="RUNNING",
+        is_optimized=True,  # Raw column was set to True
+        total_duration_sec=0.0,
+    )
+    db_session.add(running_run)
+    db_session.commit()
+
+    res = client.get("/dashboard/overview")
+    assert res.status_code == 200
+    # Should render badge 'Running', NOT 'Optimized'
+    assert "Running" in res.text
+
+
+def test_dashboard_observability_insufficient_samples_never_reports_healthy(client, db_session):
+    """
+    Priority 5: Verifies that when hardware telemetry count < 5,
+    the dashboard reports INSUFFICIENT_SAMPLES and never falsely reports HEALTHY.
+    """
+    from app.database.models import Telemetry
+
+    repo = db_session.query(Repository).first()
+    commit = db_session.query(Commit).first()
+    run1 = db_session.query(PipelineRun).first()
+
+    run2 = PipelineRun(
+        id="dash-run-002",
+        repository_id=repo.id,
+        commit_id=commit.id,
+        workflow_name="CI Workflow 2",
+        status="SUCCESS",
+        total_duration_sec=12.0,
+    )
+    db_session.add(run2)
+    db_session.flush()
+
+    # Seed 2 telemetry records (sample size < MIN_REQUIRED_SAMPLES = 5)
+    t1 = Telemetry(pipeline_run_id=run1.id, cpu_percent_avg=15.0, memory_mb_peak=120.0)
+    t2 = Telemetry(pipeline_run_id=run2.id, cpu_percent_avg=22.0, memory_mb_peak=145.0)
+    db_session.add_all([t1, t2])
+    db_session.commit()
+
+    res = client.get("/dashboard/observability")
+    assert res.status_code == 200
+    # With 2 database records (< 5 required), must display INSUFFICIENT_SAMPLES and never report HEALTHY
+    assert "INSUFFICIENT_SAMPLES" in res.text
+    assert "HEALTHY" not in res.text

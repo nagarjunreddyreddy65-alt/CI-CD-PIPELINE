@@ -10,7 +10,7 @@
 
 This document presents the complete empirical evaluation results, performance curves, feature importances, and statistical telemetry baselines for the supervised machine learning models deployed in **Autonomous DevOps**.
 
-All figures are automatically generated from certified model metadata (`app/ml/models/model_metadata.json`) and trained joblib model artifacts (`failure_predictor.joblib` and `runtime_predictor.joblib`) using the reproduction script:
+All figures are automatically generated from verified model metadata (`app/ml/models/model_metadata.json`) and trained joblib model artifacts (`failure_predictor.joblib` and `runtime_predictor.joblib`) using the reproduction script:
 
 ```bash
 python scripts/generate_ml_evaluation_graphs.py
@@ -59,6 +59,10 @@ The composite graphic below unites the classification, regression, feature impor
 | :---: | :---: |
 | ![Confusion Matrix](figures/ml_evaluation/01_confusion_matrix.png) | ![ROC Curve](figures/ml_evaluation/02_roc_auc_curve.png) |
 
+> [!NOTE]
+> **Illustrative Curve Representation:**
+> Figure 2 displays an illustrative step curve reflecting the recorded holdout metrics ($AUC = 1.000$, $N=10$, 8 Pass, 2 Fail) from verified model metadata, rather than continuous probability calibration curves from unpreserved raw prediction vectors.
+
 ---
 
 ## 4. Pipeline Execution Runtime Regressor (`RandomForestRegressor`)
@@ -86,6 +90,11 @@ The composite graphic below unites the classification, regression, feature impor
 ### Visual Result: Actual vs. Predicted Duration
 
 ![Runtime Regression Actual vs Predicted](figures/ml_evaluation/04_runtime_actual_vs_predicted.png)
+
+> [!NOTE]
+> **Illustrative Scatter Representation & SLA Corridor:**
+> - The scatter points in Figure 4 represent illustrative points reflecting the recorded holdout regression metrics ($R^2 = 0.832$, $\text{MAE} = 1.68$s, $\text{RMSE} = 2.21$s) from verified model metadata.
+> - The shaded $\pm 15\%$ corridor is an **engineering operational tolerance band** (standard CI/CD duration SLA) and **not** a statistical confidence interval.
 
 ---
 
@@ -116,28 +125,41 @@ Both models evaluate a strictly pre-execution, 10-dimensional feature vector $\m
 
 ---
 
-## 6. Statistical Telemetry Anomaly Detection (Z-Score Baseline)
+## 6. Statistical Telemetry Anomaly Detection (Empirical Database Evaluation)
 
 ### Overview
-- **Data Source:** Genuine historical telemetry recorded in the database (`total_duration_sec`, `memory_mb_peak`, and `cpu_percent_avg`).
-- **Statistical Model:** Gaussian Standard Normal Distribution Baseline ($N(\mu, \sigma)$).
+- **Data Source:** Genuine historical telemetry recorded in the local SQLite/PostgreSQL database (`PipelineRun.total_duration_sec`, `Telemetry.memory_mb_peak`, and `Telemetry.cpu_percent_avg`).
+- **Statistical Model:** Gaussian Standard Normal Distribution Baseline ($N(\mu, \sigma)$) with empirical sample mean and sample standard deviation.
 - **Threshold:** $|Z| \ge 2.5$ ($\approx 98.76\%$ confidence level under normal distribution).
 - **Evaluated Signals:** Execution time spikes, memory consumption surges, CPU load spikes, failure surges.
-- **Assumptions & Safeguards:**
-  1. Assumes metric variance around historical mean follows an approximately Gaussian distribution.
-  2. Requires a minimum historical sample window ($N \ge 5$ runs) before anomaly detection activates; returns `insufficient_samples` status if $N < 5$.
-  3. Includes zero-variance protection: if $\sigma = 0.0$ (identical historical runs), clamps $Z = 0.0$ to prevent division by zero.
-- **Explainability:** Transparent, auditable statistical boundaries suitable for enterprise governance.
 
-### Visual Result: Z-Score Anomaly Model
+### Empirical Evaluation on Database Records:
+1. **Pipeline Runs Evaluated:** **$N = 31$ completed runs** queried from `pipeline_runs`.
+2. **Empirical Baseline Duration:**
+   - Sample Mean: **$\mu = 16.53$s**
+   - Population Standard Deviation: **$\sigma = 7.27$s** (Sample Std Dev: $s = 7.39$s)
+   - Duration Anomaly Boundary ($Z \ge +2.5$): **$\ge 34.71$s**
+3. **Observed Normal Runs:** **30 runs** operated within normal tolerance ($Z \in [-0.65, +0.48]$).
+4. **Empirical Outlier Detected:** **Run #22** had an execution duration of **$51.78$s** ($Z = +4.85$), exceeding the $|Z| \ge 2.5$ threshold and successfully triggering statistical anomaly detection.
+5. **Hardware Telemetry Sample Window ($N = 2$):** The hardware metrics table (`telemetry`) currently holds 2 records. Because this is below the mandatory minimum sample window ($N < 5$), the detector correctly reports `insufficient_samples` status for CPU/RAM metrics rather than computing inaccurate baselines.
+6. **Zero-Variance & Missing Data Safeguards:**
+   - If $\sigma \le 10^{-6}$ (identical run times), $Z$ is clamped to $0.0$ to prevent zero-division errors.
+   - If database access fails, deterministic safe fallbacks prevent unverified anomaly flags.
+
+### Visual Result: Telemetry Z-Score Anomaly Analysis
 
 ![Z-Score Anomaly Detection](figures/ml_evaluation/05_zscore_anomaly_detection.png)
+
+> [!NOTE]
+> **Retrospective Analysis vs. Live Runtime Detection:**
+> - The Z-score anomaly graph represents a **retrospective statistical duration analysis over 31 historical runs** recorded in the local database, rather than real-time in-flight detection during active execution.
+> - Hardware telemetry anomaly detection (CPU and RAM) is explicitly marked as having **insufficient data** due to having only 2 historical telemetry records with hardware metrics ($N < 5$ minimum required sample window).
 
 ---
 
 ## 7. How to Regenerate All Visual Results
 
-To update or regenerate these figures at any time:
+To update or regenerate all six figures from verified database records and verified model artifacts:
 
 ```powershell
 cd "C:\AI DRIVEN CI_CD OPTIMIZATION\CI-CD-PIPELINE"

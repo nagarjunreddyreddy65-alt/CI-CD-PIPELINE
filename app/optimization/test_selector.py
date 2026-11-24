@@ -32,8 +32,15 @@ class TestSelector:
         self.default_flags = default_pytest_flags or ["-v", "--tb=short"]
 
     def calculate_reduction(self, total_tests: int, selected_tests: int) -> float:
-        """Computes test suite reduction percentage safely avoiding division by zero."""
-        if total_tests <= 0:
+        """
+        Computes test suite reduction percentage safely:
+        reduction_percent = ((total_tests - selected_tests) / total_tests) * 100
+        Safely returns 0.0 when total_tests is zero or negative.
+        Safely returns 0.0 when selected_tests is negative or exceeds total_tests.
+        """
+        if total_tests <= 0 or selected_tests < 0:
+            return 0.0
+        if selected_tests >= total_tests:
             return 0.0
         reduction = ((total_tests - selected_tests) / total_tests) * 100.0
         return max(0.0, min(100.0, round(reduction, 2)))

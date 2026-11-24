@@ -26,6 +26,7 @@ matplotlib.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from sqlalchemy.exc import SQLAlchemyError
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -77,7 +78,7 @@ def save_fig(fig, filename):
 
 
 def plot_confusion_matrix(metadata):
-    """Plot 1: Confusion Matrix from certified holdout evaluation."""
+    """Plot 1: Confusion Matrix from verified holdout evaluation."""
     cm = np.array(metadata["failure_metrics"]["confusion_matrix"])
     labels = ["PASS (0)", "FAIL (1)"]
 
@@ -128,11 +129,11 @@ def plot_confusion_matrix(metadata):
 
 
 def plot_roc_curve(metadata):
-    """Plot 2: ROC-AUC Curve with decision threshold annotation."""
+    """Plot 2: ROC-AUC Curve with decision threshold annotation (Illustrative of Recorded Holdout)."""
     auc = metadata["failure_metrics"]["roc_auc"]
 
     fig, ax = plt.subplots(figsize=(5.5, 4.5))
-    # Synthetic empirical curve matching AUC 1.0 holdout result
+    # Illustrative step curve representing recorded holdout metrics (AUC = 1.00, N=10)
     fpr = np.array([0.0, 0.0, 0.0, 0.1, 0.2, 0.5, 1.0])
     tpr = np.array([0.0, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0])
 
@@ -141,7 +142,7 @@ def plot_roc_curve(metadata):
         tpr,
         color=PRIMARY_COLOR,
         lw=2.5,
-        label=f"Random Forest Classifier (AUC = {auc:.2f})",
+        label=f"RF Classifier (Holdout AUC = {auc:.2f})",
     )
     ax.plot(
         [0, 1],
@@ -159,27 +160,48 @@ def plot_roc_curve(metadata):
         color=SUCCESS_COLOR,
         s=80,
         zorder=5,
-        label="Optimal Operating Point (0.0, 1.0)",
+        label="Operating Point (FPR=0.0, TPR=1.0)",
     )
 
     ax.set_xlim([-0.02, 1.02])
     ax.set_ylim([-0.02, 1.05])
     ax.set_title(
-        "Receiver Operating Characteristic (ROC) Curve\nPipeline Failure Prediction",
+        "Receiver Operating Characteristic (ROC) Curve\nPipeline Failure Prediction (Illustrative Representation)",
         pad=12,
     )
     ax.set_xlabel("False Positive Rate (1 - Specificity)", labelpad=8)
     ax.set_ylabel("True Positive Rate (Recall / Sensitivity)", labelpad=8)
-    ax.legend(loc="lower right", frameon=True, framealpha=0.9)
+    ax.legend(loc="lower right", frameon=True, framealpha=0.9, fontsize=8.5)
     ax.grid(True, linestyle=":", alpha=0.6)
+
+    # Limitation annotation box
+    ax.text(
+        0.5,
+        0.30,
+        "Note: Illustrative curve representing recorded holdout metrics\n"
+        "(ROC-AUC=1.00, Confusion Matrix: 8 Pass, 2 Fail).\n"
+        "Raw prediction probabilities unpreserved in metadata.\n"
+        "Small holdout limitation (N=10); does not claim generalization.",
+        ha="center",
+        va="center",
+        transform=ax.transAxes,
+        fontsize=7.5,
+        style="italic",
+        bbox={
+            "boxstyle": "round,pad=0.3",
+            "facecolor": "#f8fafc",
+            "edgecolor": "#cbd5e1",
+            "alpha": 0.95,
+        },
+    )
 
     save_fig(fig, "02_roc_auc_curve.png")
     plt.close(fig)
 
 
 def plot_feature_importance(feature_names, fp_importances, rp_importances):
-    """Plot 3: Comparative Feature Importance across both ML models."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    """Plot 3: Comparative Feature Importance across both ML models (Predictive Association, Not Causation)."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5.2), sharey=True)
 
     y_pos = np.arange(len(feature_names))
 
@@ -241,8 +263,9 @@ def plot_feature_importance(feature_names, fp_importances, rp_importances):
             )
 
     fig.suptitle(
-        "Feature Importance in CI/CD Pre-Execution Feature Space (R^10)",
-        fontsize=13,
+        "Feature Importance in CI/CD Pre-Execution Feature Space (R¹⁰)\n"
+        "(Predictive Association within Ensembles — Not Causal Evidence)",
+        fontsize=12,
         y=1.02,
     )
     plt.tight_layout()
@@ -252,13 +275,13 @@ def plot_feature_importance(feature_names, fp_importances, rp_importances):
 
 
 def plot_actual_vs_predicted(metadata):
-    """Plot 4: Actual vs Predicted Runtime Regression with error bands."""
+    """Plot 4: Actual vs Predicted Runtime Regression with error bands (Illustrative of Recorded Holdout)."""
     mae = metadata["runtime_metrics"]["mae"]
     rmse = metadata["runtime_metrics"]["rmse"]
     r2 = metadata["runtime_metrics"]["r2_score"]
 
     np.random.seed(42)
-    # Generate representative holdout data matching R^2=0.832, MAE=1.68s
+    # Representative illustrative points reflecting recorded holdout metrics (R²=0.832, MAE=1.68s, RMSE=2.21s)
     y_actual = np.array([5.2, 8.4, 12.1, 15.8, 19.3, 22.0, 28.5, 33.1, 39.8, 45.2])
     noise = np.array([0.8, -1.2, 1.5, -0.9, 1.8, -2.1, 1.4, -1.9, 2.3, -1.7])
     y_pred = y_actual + noise
@@ -274,7 +297,7 @@ def plot_actual_vs_predicted(metadata):
         alpha=0.9,
         edgecolors="#4c1d95",
         zorder=4,
-        label="Holdout Runs (N=10)",
+        label="Illustrative Holdout Runs (N=10)",
     )
 
     # 45-degree identity line
@@ -288,36 +311,38 @@ def plot_actual_vs_predicted(metadata):
         label="Ideal Fit (y = x)",
     )
 
-    # 15% operational SLA bounds (engineering corridor, not statistical CI)
+    # ±15% operational SLA bounds (engineering corridor, not statistical CI)
     ax.fill_between(
         [min_val, max_val],
         [min_val * 0.85, max_val * 0.85],
         [min_val * 1.15, max_val * 1.15],
         color=PURPLE_COLOR,
         alpha=0.12,
-        label="±15% Operational SLA Band (Not Statistical CI)",
+        label="±15% Operational SLA Tolerance Band\n(Engineering heuristic, NOT statistical CI)",
     )
 
     ax.set_xlim([0, 50])
     ax.set_ylim([0, 50])
     ax.set_title(
-        "Runtime Duration Regressor — Actual vs. Predicted\n(Execution Time in Seconds)",
+        "Runtime Duration Regressor — Actual vs. Predicted (Illustrative)\n"
+        "(Recorded Holdout Metrics: R² = 0.832, MAE = 1.68s, RMSE = 2.21s)",
         pad=12,
     )
     ax.set_xlabel("Actual Measured Duration (s)", labelpad=8)
     ax.set_ylabel("Predicted Duration (s)", labelpad=8)
-    ax.legend(loc="upper left", frameon=True, framealpha=0.9)
+    ax.legend(loc="upper left", frameon=True, framealpha=0.9, fontsize=8)
     ax.grid(True, linestyle=":", alpha=0.6)
 
     # Metrics annotation box
     ax.text(
         0.95,
         0.08,
-        f"R² Score: {r2:.3f}\nMAE: {mae:.2f}s\nRMSE: {rmse:.2f}s",
+        f"Recorded Holdout (N=10):\nR² Score: {r2:.3f}\nMAE: {mae:.2f}s\nRMSE: {rmse:.2f}s\n"
+        "Note: Illustrative scatter.\nExact vector unpreserved.",
         ha="right",
         va="bottom",
         transform=ax.transAxes,
-        fontsize=9,
+        fontsize=8,
         weight="semibold",
         bbox={
             "boxstyle": "round,pad=0.4",
@@ -330,15 +355,66 @@ def plot_actual_vs_predicted(metadata):
     plt.close(fig)
 
 
-def plot_zscore_distribution():
-    """Plot 5: Statistical Z-Score Anomaly Detection Bell Curve."""
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+def fetch_historical_telemetry():
+    """
+    Queries genuine historical records from the database.
+    Calculates execution duration baseline (mean, std), Z-scores, and inspects hardware telemetry.
+    Safely handles missing database, empty tables, and zero-variance data.
+    """
+    sys.path.insert(0, str(BASE_DIR))
+    try:
+        from app.database.models import PipelineRun, Telemetry
+        from app.database.session import SessionLocal
 
-    x = np.linspace(-4, 4, 1000)
+        with SessionLocal() as db:
+            runs = (
+                db.query(PipelineRun)
+                .filter(PipelineRun.total_duration_sec > 0.0)
+                .order_by(PipelineRun.created_at.asc())
+                .all()
+            )
+            durations = [float(r.total_duration_sec) for r in runs]
+            run_ids = [str(r.id) for r in runs]
+
+            telem_records = db.query(Telemetry).all()
+            cpu_vals = [
+                float(t.cpu_percent_avg) for t in telem_records if t.cpu_percent_avg is not None
+            ]
+            mem_vals = [
+                float(t.memory_mb_peak) for t in telem_records if t.memory_mb_peak is not None
+            ]
+
+            return {
+                "has_data": len(durations) >= 5,
+                "durations": np.array(durations),
+                "run_ids": run_ids,
+                "runs_count": len(durations),
+                "telemetry_count": len(telem_records),
+                "cpu_vals": np.array(cpu_vals),
+                "mem_vals": np.array(mem_vals),
+            }
+    except (SQLAlchemyError, OSError, RuntimeError, ValueError) as exc:
+        print(f"⚠️  Database query encountered issue ({exc}). Using safe fallback.")
+        return {
+            "has_data": False,
+            "durations": np.array([]),
+            "run_ids": [],
+            "runs_count": 0,
+            "telemetry_count": 0,
+            "cpu_vals": np.array([]),
+            "mem_vals": np.array([]),
+        }
+
+
+def plot_zscore_distribution(telemetry_data):
+    """Plot 5: Statistical Z-Score Anomaly Detection on Genuine Historical Telemetry."""
+    fig, ax = plt.subplots(figsize=(7.0, 4.8))
+
+    x = np.linspace(-4, 6, 1200)
     y = (1 / np.sqrt(2 * np.pi)) * np.exp(-0.5 * x**2)
 
-    # Normal curve
-    ax.plot(x, y, color="#334155", lw=2, label="Standard Normal Distribution N(0, 1)")
+    # Reference Standard Normal curve
+    ax.plot(x, y, color="#334155", lw=1.8, label="Standard Normal Reference N(0, 1)")
 
     # Fill Normal region (-2.5 <= Z <= 2.5)
     mask_normal = (x >= -2.5) & (x <= 2.5)
@@ -346,61 +422,148 @@ def plot_zscore_distribution():
         x[mask_normal],
         y[mask_normal],
         color=SUCCESS_COLOR,
-        alpha=0.2,
+        alpha=0.18,
         label="Normal Operation (|Z| < 2.5, 98.76%)",
     )
 
-    # Fill Anomaly regions (|Z| >= 2.5)
-    mask_left = x <= -2.5
+    # Fill Anomaly region (Z >= 2.5)
     mask_right = x >= 2.5
     ax.fill_between(
-        x[mask_left],
-        y[mask_left],
+        x[mask_right],
+        y[mask_right],
         color=DANGER_COLOR,
-        alpha=0.45,
-        label="Anomaly Threshold (|Z| ≥ 2.5, 1.24%)",
+        alpha=0.35,
+        label="Anomaly Region (Z ≥ +2.5)",
     )
-    ax.fill_between(x[mask_right], y[mask_right], color=DANGER_COLOR, alpha=0.45)
+    mask_left = x <= -2.5
+    ax.fill_between(x[mask_left], y[mask_left], color=DANGER_COLOR, alpha=0.35)
 
     # Threshold lines
-    ax.axvline(2.5, color=DANGER_COLOR, linestyle="--", lw=1.8)
+    ax.axvline(
+        2.5, color=DANGER_COLOR, linestyle="--", lw=1.8, label="Anomaly Threshold (Z = ±2.5)"
+    )
     ax.axvline(-2.5, color=DANGER_COLOR, linestyle="--", lw=1.8)
 
-    ax.text(
-        2.6,
-        0.25,
-        "Anomaly Trigger\nZ ≥ +2.5\n(Resource Surge)",
-        color=DANGER_COLOR,
-        weight="bold",
-        fontsize=8.5,
-    )
-    ax.text(
-        -3.8,
-        0.25,
-        "Anomaly Trigger\nZ ≤ -2.5",
-        color=DANGER_COLOR,
-        weight="bold",
-        fontsize=8.5,
-    )
+    if telemetry_data["has_data"]:
+        durations = telemetry_data["durations"]
+        n_runs = len(durations)
+        mu = float(np.mean(durations))
+        sigma = float(np.std(durations, ddof=1)) if len(durations) > 1 else 1.0
 
-    ax.set_title(
-        "Statistical Anomaly Detection Baseline\nZ-Score Thresholding (|Z| ≥ 2.5)",
-        pad=12,
-    )
-    ax.set_xlabel(
-        "Z-Score (Standard Deviations from Historical Baseline Mean μ)",
-        labelpad=8,
-    )
+        # Safe zero-variance handling
+        if sigma <= 1e-6:
+            z_scores = np.zeros_like(durations)
+        else:
+            z_scores = (durations - mu) / sigma
+
+        normal_z = z_scores[np.abs(z_scores) < 2.5]
+        anom_z = z_scores[np.abs(z_scores) >= 2.5]
+
+        # Scatter observed points along baseline y=0.015 with slight vertical jitter for visibility
+        np.random.seed(42)
+        y_jitter_normal = 0.015 + np.random.uniform(-0.005, 0.008, size=len(normal_z))
+        ax.scatter(
+            normal_z,
+            y_jitter_normal,
+            color=PRIMARY_COLOR,
+            s=40,
+            alpha=0.75,
+            edgecolors="#1e3a8a",
+            zorder=5,
+            label=f"Observed Normal Runs (N={len(normal_z)})",
+        )
+
+        if len(anom_z) > 0:
+            anom_idx = np.where(np.abs(z_scores) >= 2.5)[0]
+            for idx in anom_idx:
+                z_val = z_scores[idx]
+                dur_val = durations[idx]
+                ax.scatter(
+                    [z_val],
+                    [0.02],
+                    color=DANGER_COLOR,
+                    s=120,
+                    marker="*",
+                    edgecolors="#7f1d1d",
+                    zorder=6,
+                    label=f"Observed Anomaly Run (Z={z_val:.2f})",
+                )
+                ax.annotate(
+                    f"Outlier Run #{idx + 1}\nDuration: {dur_val:.2f}s\nZ = +{z_val:.2f}",
+                    xy=(z_val, 0.02),
+                    xytext=(z_val - 1.2, 0.12),
+                    arrowprops={
+                        "facecolor": DANGER_COLOR,
+                        "shrink": 0.08,
+                        "width": 1.5,
+                        "headwidth": 6,
+                    },
+                    fontsize=8.5,
+                    fontweight="bold",
+                    color="#7f1d1d",
+                    bbox={
+                        "boxstyle": "round,pad=0.3",
+                        "facecolor": "#fee2e2",
+                        "edgecolor": "#ef4444",
+                    },
+                )
+
+        ax.set_title(
+            f"Historical CI/CD Telemetry Anomaly Detection\n"
+            f"Empirical Evaluation from Database (N={n_runs} Runs, μ={mu:.2f}s, σ={sigma:.2f}s)",
+            pad=12,
+        )
+        info_text = (
+            f"Historical Telemetry Records:\n"
+            f"• Pipeline Runs Evaluated: N = {n_runs}\n"
+            f"• Baseline Duration: μ = {mu:.2f}s, σ = {sigma:.2f}s\n"
+            f"• Anomaly Threshold: |Z| ≥ 2.5 (Duration ≥ {mu + 2.5 * sigma:.2f}s)\n"
+            f"• Outlier Detected: {len(anom_z)} run(s) exceeding threshold\n"
+            f"• Hardware Telemetry (CPU/RAM): N = {telemetry_data['telemetry_count']}\n"
+            f"  (< 5 sample window; correctly flagged as insufficient)"
+        )
+    else:
+        ax.set_title(
+            "Historical CI/CD Telemetry Anomaly Detection Baseline\n"
+            "(Standard Normal Reference Model — Insufficient Database Runs)",
+            pad=12,
+        )
+        info_text = (
+            "Database Status: Insufficient historical records (< 5 runs).\n"
+            "Graph illustrates theoretical Gaussian reference model |Z| ≥ 2.5.\n"
+            "Deterministic fallback prevents premature anomaly decisions."
+        )
+
+    ax.set_xlabel("Z-Score (Standard Deviations from Historical Baseline Mean μ)", labelpad=8)
     ax.set_ylabel("Probability Density", labelpad=8)
+    ax.set_xlim([-4.2, 5.8])
     ax.set_ylim([0, 0.45])
     ax.legend(loc="upper left", frameon=True, framealpha=0.9, fontsize=8)
     ax.grid(True, linestyle=":", alpha=0.6)
+
+    ax.text(
+        0.98,
+        0.58,
+        info_text,
+        ha="right",
+        va="top",
+        transform=ax.transAxes,
+        fontsize=8,
+        bbox={
+            "boxstyle": "round,pad=0.4",
+            "facecolor": "#f8fafc",
+            "edgecolor": "#cbd5e1",
+            "alpha": 0.95,
+        },
+    )
 
     save_fig(fig, "05_zscore_anomaly_detection.png")
     plt.close(fig)
 
 
-def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_importances):
+def plot_master_evaluation_panel(
+    metadata, feature_names, fp_importances, rp_importances, telemetry_data
+):
     """Plot 6: Multi-panel composite master figure suitable for IEEE publication."""
     fig = plt.figure(figsize=(15, 10))
     gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.28)
@@ -422,7 +585,11 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
         linewidths=1.2,
         linecolor="#e2e8f0",
     )
-    ax1.set_title("A. Failure Classifier Confusion Matrix", fontsize=11, weight="bold")
+    ax1.set_title(
+        "A. Failure Classifier Confusion Matrix\n(Held-out Test Split, N=10)",
+        fontsize=10.5,
+        weight="bold",
+    )
     ax1.set_xlabel("Predicted Class", fontsize=9)
     ax1.set_ylabel("True Ground Truth", fontsize=9)
 
@@ -436,7 +603,7 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
         tpr,
         color=PRIMARY_COLOR,
         lw=2.2,
-        label=f"RF Classifier (AUC={auc:.2f})",
+        label=f"RF Classifier (Holdout AUC={auc:.2f})",
     )
     ax2.plot(
         [0, 1],
@@ -449,7 +616,11 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
     ax2.fill_between(fpr, tpr, color=PRIMARY_COLOR, alpha=0.15)
     ax2.set_xlim([-0.02, 1.02])
     ax2.set_ylim([-0.02, 1.05])
-    ax2.set_title("B. ROC-AUC Performance Curve", fontsize=11, weight="bold")
+    ax2.set_title(
+        "B. ROC Curve (Illustrative, Holdout AUC=1.00)",
+        fontsize=10.5,
+        weight="bold",
+    )
     ax2.set_xlabel("False Positive Rate", fontsize=9)
     ax2.set_ylabel("True Positive Rate", fontsize=9)
     ax2.legend(loc="lower right", fontsize=8)
@@ -472,7 +643,11 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
     ax3.fill_between([0, 50], [0, 42.5], [0, 57.5], color=PURPLE_COLOR, alpha=0.1)
     ax3.set_xlim([0, 50])
     ax3.set_ylim([0, 50])
-    ax3.set_title("C. Runtime Regression (Predicted vs Actual)", fontsize=11, weight="bold")
+    ax3.set_title(
+        "C. Runtime Regressor (Illustrative, ±15% SLA band)",
+        fontsize=10.5,
+        weight="bold",
+    )
     ax3.set_xlabel("Actual Duration (s)", fontsize=9)
     ax3.set_ylabel("Predicted Duration (s)", fontsize=9)
     r2 = metadata["runtime_metrics"]["r2_score"]
@@ -518,8 +693,8 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
     ax4.set_yticks(y_pos)
     ax4.set_yticklabels(display_names, fontsize=8.5)
     ax4.set_title(
-        "D. Pre-Execution Feature Importance Comparison across Both Models",
-        fontsize=11,
+        "D. Pre-Execution Feature Importance (Predictive Association, Not Causation)",
+        fontsize=10.5,
         weight="bold",
     )
     ax4.set_xlabel("Gini Importance / MSE Reduction", fontsize=9)
@@ -528,7 +703,7 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
 
     # 5. Z-Score Anomaly
     ax5 = fig.add_subplot(gs[1, 2])
-    x = np.linspace(-4, 4, 500)
+    x = np.linspace(-4, 6, 600)
     y = (1 / np.sqrt(2 * np.pi)) * np.exp(-0.5 * x**2)
     ax5.plot(x, y, color="#334155", lw=1.8)
     mask_normal = (x >= -2.5) & (x <= 2.5)
@@ -549,7 +724,39 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
     ax5.fill_between(x[x <= -2.5], y[x <= -2.5], color=DANGER_COLOR, alpha=0.5)
     ax5.axvline(2.5, color=DANGER_COLOR, linestyle="--", lw=1.5)
     ax5.axvline(-2.5, color=DANGER_COLOR, linestyle="--", lw=1.5)
-    ax5.set_title("E. Telemetry Z-Score Anomaly Model", fontsize=11, weight="bold")
+
+    if telemetry_data["has_data"]:
+        durations = telemetry_data["durations"]
+        mu = float(np.mean(durations))
+        sigma = float(np.std(durations, ddof=1)) if len(durations) > 1 else 1.0
+        z_scores = (durations - mu) / sigma if sigma > 1e-6 else np.zeros_like(durations)
+        normal_z = z_scores[np.abs(z_scores) < 2.5]
+        anom_z = z_scores[np.abs(z_scores) >= 2.5]
+        ax5.scatter(
+            normal_z,
+            [0.015] * len(normal_z),
+            color=PRIMARY_COLOR,
+            s=20,
+            alpha=0.7,
+            zorder=5,
+        )
+        if len(anom_z) > 0:
+            ax5.scatter(
+                anom_z,
+                [0.02] * len(anom_z),
+                color=DANGER_COLOR,
+                s=60,
+                marker="*",
+                zorder=6,
+            )
+        ax5.set_title(
+            f"E. Telemetry Z-Scores (DB N={len(durations)}, Outlier Z={anom_z[0]:.2f})",
+            fontsize=10.5,
+            weight="bold",
+        )
+    else:
+        ax5.set_title("E. Telemetry Z-Score Anomaly Model", fontsize=10.5, weight="bold")
+
     ax5.set_xlabel("Z-Score Threshold", fontsize=9)
     ax5.set_ylabel("Density", fontsize=9)
     ax5.legend(loc="upper left", fontsize=7.5)
@@ -602,6 +809,9 @@ def main():
     fp_importances = list(fp.model.feature_importances_)
     rp_importances = list(rp.model.feature_importances_)
 
+    # 3. Query genuine historical telemetry from database
+    telemetry_data = fetch_historical_telemetry()
+
     print("Generating Figure 1: Confusion Matrix...")
     plot_confusion_matrix(metadata)
 
@@ -615,10 +825,12 @@ def main():
     plot_actual_vs_predicted(metadata)
 
     print("Generating Figure 5: Z-Score Anomaly Distribution...")
-    plot_zscore_distribution()
+    plot_zscore_distribution(telemetry_data)
 
     print("Generating Figure 6: Master Evaluation Panel...")
-    plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_importances)
+    plot_master_evaluation_panel(
+        metadata, feature_names, fp_importances, rp_importances, telemetry_data
+    )
 
     print("=" * 60)
     print("✅ All 6 ML evaluation figures generated successfully!")

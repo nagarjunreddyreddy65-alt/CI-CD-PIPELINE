@@ -39,12 +39,12 @@ jobs:
 
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -86,7 +86,7 @@ jobs:
         run: |
           python scripts/benchmark_e2e.py
 
-      - name: Verify Live CI Optimization Runner Integration
+      - name: Verify Live CI Optimization Runner Integration (Full Suite, Optimized & Fallbacks)
         env:
           OPTIMIZATION_API_URL: http://127.0.0.1:8000
           RUNNER_API_KEY: autonomous_devops_runner_dev_api_key_2026
@@ -95,8 +95,15 @@ jobs:
           python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
           BACKEND_PID=$!
           sleep 4
+          echo "=== 1. Live Integration Test: Full Suite Fallback Override ==="
           python scripts/run_optimized_ci.py --api-url http://127.0.0.1:8000 --force-full
+          echo "=== 2. Live Integration Test: Optimized Mode (Safe Change) ==="
+          python scripts/run_optimized_ci.py --api-url http://127.0.0.1:8000 --changed-files sample_app/utils/math_ops.py:MODIFIED:3:1
+          echo "=== 3. Live Integration Test: Safety Fallback Mode (Sensitive File) ==="
+          python scripts/run_optimized_ci.py --api-url http://127.0.0.1:8000 --changed-files sample_app/auth/security_service.py:MODIFIED:2:0
           kill $BACKEND_PID || true
+          echo "=== 4. Live Integration Test: API-Unavailable Fallback (Rule 19) ==="
+          python scripts/run_optimized_ci.py --api-url http://127.0.0.1:9999 --changed-files sample_app/utils/math_ops.py:MODIFIED:3:1
 
       - name: Static Security Analysis (Bandit SAST)
         run: |
@@ -107,6 +114,6 @@ jobs:
           pip-audit -r requirements.txt --desc on
 
       - name: Secret Leak Detection (Gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e7d8ef52e496eb4e5a4ab46fc5970e459 # v2.3.8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

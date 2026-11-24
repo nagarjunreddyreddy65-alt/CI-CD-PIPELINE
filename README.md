@@ -123,7 +123,7 @@ In production (`ENVIRONMENT=production`):
 
 All core components, API endpoints, sample application modules, safety rules, ML model loading, and authentication layers are strictly verified:
 
-### 1. Run Complete Test Suite (205 tests, 100% pass rate)
+### 1. Run Complete Test Suite (236 tests, 100% pass rate)
 ```bash
 python -m pytest tests/ tests_sample_app/ -v
 ```
@@ -133,20 +133,26 @@ python -m pytest tests/ tests_sample_app/ -v
 ruff check .
 ruff format --check .
 ```
-*(0 violations across all 94 repository files; 100% formatted)*
+*(0 violations across all repository files; 100% formatted)*
 
 ### 3. Security Auditing (Bandit SAST, pip-audit SCA, Gitleaks)
 ```bash
 bandit -r app sample_app -ll -ii
 pip-audit -r requirements.txt --desc on
 ```
-*(0 High/Medium security issues across 5,762 LOC; 0 dependency vulnerabilities; Gitleaks clean)*
+*(0 High/Medium security issues; 0 dependency vulnerabilities; Gitleaks clean)*
 
 ### 4. End-to-End Benchmarking & Controlled Defect Injection
 ```bash
 python scripts/benchmark_e2e.py
 ```
 *(Executes 15 benchmark scenarios, controlled defect injection, dynamically calculates safety compliance, and exports `data/e2e_benchmark_report.json`)*
+
+### 5. Reproduce Empirical ML Evaluation Figures
+```bash
+python scripts/generate_ml_evaluation_graphs.py
+```
+*(Generates all 6 publication-quality ML and telemetry evaluation figures in `docs/figures/ml_evaluation/` and `app/static/graphs/`)*
 
 ---
 
@@ -155,6 +161,7 @@ python scripts/benchmark_e2e.py
 - [System Architecture](docs/ARCHITECTURE.md) — 5-tier architecture, security boundaries, and data flows.
 - [Project Plan & Roadmap](docs/PROJECT_PLAN.md) — Complete milestone records and deliverables.
 - [Deterministic Safety Policy (21 Rules)](docs/SAFETY_POLICY.md) — Exhaustive specification of all 21 fallback conditions.
+- [Machine Learning Empirical Evaluation](docs/ML_EVALUATION_RESULTS.md) — Empirical ML benchmarks, ROC curve, feature importances, and telemetry Z-scores.
 - [Testing, Benchmarking & Evaluation](docs/TESTING_AND_EVALUATION.md) — Empirical benchmark reports, test matrices, and defect analysis.
 - [Development Log](docs/DEVELOPMENT_LOG.md) — Chronological record of engineering decisions and audit resolutions.
 - [IEEE Research Paper Structure](docs/IEEE_PAPER_STRUCTURE.md) — Academic publication draft with mathematical modeling and empirical limitations.

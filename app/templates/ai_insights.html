@@ -15,7 +15,7 @@
   <div class="academic-banner-content">
     <strong>Academic Methodology & Provenance Architecture:</strong>
     Supervised Scikit-Learn models (Random Forest Classifier & Regressor) estimate commit risk profiles from AST-extracted features.
-    All training datasets are cryptographically bound via <code class="code-inline">VerifiedTelemetryDataset</code> (SHA-256 HMAC integrity seals) to guarantee tamper-proof database provenance.
+    All training datasets are cryptographically bound via <code class="code-inline">VerifiedTelemetryDataset</code> (SHA-256 HMAC integrity seals) to guarantee tamper-evident database provenance.
     Under the <em>Deterministic Safety Policy</em>, ML models predict probability; deterministic safety rules decide execution.
   </div>
 </div>
@@ -32,7 +32,7 @@
       {% if models.failure_predictor.is_trained %}
         <span style="color: var(--accent-success-text); display: inline-flex; align-items: center; gap: 6px;">
           <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-success);"></span>
-          Trained & Certified
+          Verified Model Loaded
         </span>
       {% else %}
         <span style="color: var(--accent-warning-text); display: inline-flex; align-items: center; gap: 6px;">
@@ -43,7 +43,8 @@
     </div>
     <div class="kpi-trend">
       <span>Version: <strong class="code-inline">{{ models.failure_predictor.version }}</strong></span> &bull; 
-      <span>Threshold &tau;: <strong>{{ models.failure_predictor.risk_threshold }}</strong></span>
+      <span>Risk &tau;: <strong>{{ models.failure_predictor.risk_threshold }}</strong></span> &bull;
+      <span>Confidence &rho;: <strong>0.70</strong></span>
     </div>
   </div>
 
@@ -105,7 +106,7 @@
   <div class="card-header">
     <div>
       <div class="card-title">Empirical ML Evaluation Curves & Performance Analytics</div>
-      <div class="card-subtitle">Certified holdout test split benchmarks, ROC-AUC curve, feature importances, and runtime regression</div>
+      <div class="card-subtitle">Recorded holdout test split benchmarks (N=10, 2 Failures). Note: ROC and runtime plots are illustrative overlays reflecting recorded holdout metrics.</div>
     </div>
     <div>
       <a href="/static/graphs/06_ml_evaluation_master_panel.png" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
@@ -117,25 +118,25 @@
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
       <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
         <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          Confusion Matrix (Holdout Split)
+          Confusion Matrix (Recorded Holdout N=10)
         </div>
         <img src="/static/graphs/01_confusion_matrix.png" alt="Confusion Matrix" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
       <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
         <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          ROC-AUC Performance Curve (1.00)
+          ROC-AUC Performance Curve (Illustrative, AUC = 1.00)
         </div>
         <img src="/static/graphs/02_roc_auc_curve.png" alt="ROC-AUC Curve" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
       <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
         <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          Runtime Actual vs. Predicted (R² = 0.832)
+          Runtime Actual vs. Predicted (Illustrative, R² = 0.832)
         </div>
         <img src="/static/graphs/04_runtime_actual_vs_predicted.png" alt="Runtime Actual vs Predicted" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
       <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
         <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          Pre-Execution Feature Importances
+          Pre-Execution Feature Importances (Statistical Association)
         </div>
         <img src="/static/graphs/03_feature_importance.png" alt="Feature Importance" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>

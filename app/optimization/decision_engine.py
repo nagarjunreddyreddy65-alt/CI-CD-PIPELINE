@@ -562,14 +562,22 @@ class DecisionEngine:
     ) -> PipelineRun | None:
         """
         Transitions a pipeline run to terminal status (SUCCESS, FAILED, ABORTED, CANCELLED),
-        computing duration and recording an audit trail.
+        computing duration and recording an audit trail. Handles late runner completions
+        safely if previously reconciled as ABORTED.
         """
         run = db.query(PipelineRun).filter(PipelineRun.id == pipeline_run_id).first()
         if not run:
             return None
 
+        is_late_completion = run.status == "ABORTED" and status in ("SUCCESS", "FAILED")
+        terminal_states = {"SUCCESS", "FAILED", "CANCELLED"}
+        if run.status in terminal_states and not is_late_completion:
+            # Already completed terminal run: preserve existing outcome
+            return run
+
         completed_ts = datetime.now(UTC)
         run.completed_at = completed_ts
+        original_status = run.status
         run.status = status
 
         if total_duration_sec is not None:
@@ -583,11 +591,17 @@ class DecisionEngine:
         if error_message and not run.fallback_reason:
             run.fallback_reason = error_message
 
+        event_name = (
+            "LATE_RUNNER_COMPLETION_RECORDED" if is_late_completion else "PIPELINE_RUN_COMPLETED"
+        )
         audit = AuditLog(
-            event_type="PIPELINE_RUN_COMPLETED",
+            event_type=event_name,
             entity_type="PipelineRun",
             entity_id=run.id,
-            details=f"Run transitioned to {status}. Duration: {run.total_duration_sec}s.",
+            details=(
+                f"Run transitioned from {original_status} to {status}. "
+                f"Duration: {run.total_duration_sec}s. Late completion: {is_late_completion}."
+            ),
         )
         db.add(audit)
         db.commit()

@@ -268,7 +268,7 @@ def complete_pipeline_run_status(
 ):
     """
     Explicitly transitions a PipelineRun to a terminal status (SUCCESS, FAILED, CANCELLED, ABORTED),
-    recording exact duration, completion timestamp, and an immutable audit trail.
+    recording exact duration, completion timestamp, and an audit trail log entry.
     """
     run = DecisionEngine.complete_pipeline_run(
         db=db,

@@ -109,7 +109,7 @@
           </td>
           <td>
             {% if plan.reduction_pct > 0 %}
-              <span class="badge badge-success" style="font-weight: 700;">-{{ plan.reduction_pct }}%</span>
+              <span class="badge badge-success" style="font-weight: 700;">{{ plan.reduction_pct }}%</span>
             {% else %}
               <span style="color: var(--text-muted); font-size: 0.8rem;">0.0%</span>
             {% endif %}

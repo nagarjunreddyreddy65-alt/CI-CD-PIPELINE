@@ -2,7 +2,7 @@
 
 {% block title %}Pipeline History{% endblock %}
 {% block page_title %}Historical Pipeline Executions{% endblock %}
-{% block page_description %}Complete immutable audit ledger of CI executions, commit SHAs, AST selections, and deterministic fallback enforcement{% endblock %}
+{% block page_description %}Complete audit ledger of CI executions, commit SHAs, AST selections, and deterministic fallback enforcement{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -101,16 +101,20 @@
           </td>
           <td>
             {% if run.reduction_pct > 0 %}
-              <span class="badge badge-success" style="font-weight: 700;">-{{ run.reduction_pct }}%</span>
+              <span class="badge badge-success" style="font-weight: 700;">{{ run.reduction_pct }}%</span>
             {% else %}
               <span style="color: var(--text-muted); font-size: 0.8rem;">0.0%</span>
             {% endif %}
           </td>
           <td style="max-width: 260px;">
-            {% if run.is_optimized %}
+            {% if run.decision == 'OPTIMIZED' %}
               <span class="badge badge-success" style="margin-bottom: 3px;">Optimized</span><br>
+            {% elif run.decision == 'FULL_SUITE' %}
+              <span class="badge badge-purple" style="margin-bottom: 3px;">Full Suite</span><br>
+            {% elif run.decision == 'RUNNING' %}
+              <span class="badge badge-warning" style="margin-bottom: 3px;">Running</span><br>
             {% else %}
-              <span class="badge badge-warning" style="margin-bottom: 3px;">Full Suite</span><br>
+              <span class="badge badge-neutral" style="margin-bottom: 3px;">Direct Suite</span><br>
             {% endif %}
             <small style="color: var(--text-secondary); line-height: 1.3; display: block;">{{ run.decision_reason }}</small>
           </td>

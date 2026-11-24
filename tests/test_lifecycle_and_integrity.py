@@ -13,7 +13,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import BASE_DIR, settings
-from app.database.models import AuditLog, Commit, PipelineRun, Repository
+from app.database.models import (
+    AuditLog,
+    Commit,
+    PipelineRun,
+    Repository,
+    Telemetry,
+    TestCase,
+    TestResult,
+)
 from app.database.session import SessionLocal
 from app.main import app
 from app.ml.model_manager import ModelManager
@@ -255,6 +263,171 @@ def test_stale_run_reconciliation(db_session):
     db_session.commit()
 
 
+def test_reconciliation_preserves_runs_with_recent_telemetry_heartbeat(db_session):
+    """
+    Verifies that a run created >2h ago is NOT aborted if it received a recent
+    telemetry heartbeat within the stale threshold window.
+    """
+    repo = Repository(
+        name=f"heartbeat-repo-{uuid.uuid4().hex[:6]}",
+        owner="TestOrg",
+        clone_url="https://github.com/TestOrg/hb.git",
+        default_branch="main",
+    )
+    db_session.add(repo)
+    db_session.flush()
+
+    # Created 3 hours ago, but telemetry heartbeat collected 10 minutes ago
+    run_with_heartbeat = PipelineRun(
+        id=f"hb-run-{uuid.uuid4().hex[:8]}",
+        repository_id=repo.id,
+        workflow_name="Long Running Test Job",
+        status="RUNNING",
+        created_at=datetime.now(UTC) - timedelta(hours=3),
+        total_duration_sec=0.0,
+    )
+    db_session.add(run_with_heartbeat)
+    db_session.flush()
+
+    telem = Telemetry(
+        pipeline_run_id=run_with_heartbeat.id,
+        cpu_percent_avg=55.0,
+        memory_mb_peak=320.0,
+        runner_os="Ubuntu-Latest",
+        collected_at=datetime.now(UTC) - timedelta(minutes=10),
+    )
+    db_session.add(telem)
+    db_session.commit()
+
+    res = reconcile_stale_runs(db_session, stale_threshold_hours=2.0)
+    db_session.refresh(run_with_heartbeat)
+
+    # Must NOT be aborted: preserved because telemetry heartbeat is fresh
+    assert run_with_heartbeat.status == "RUNNING"
+    skipped_ids = [item["run_id"] for item in res["active_skipped"]]
+    assert run_with_heartbeat.id in skipped_ids
+
+    # Clean up
+    db_session.delete(telem)
+    db_session.delete(run_with_heartbeat)
+    db_session.commit()
+
+
+def test_reconciliation_preserves_runs_with_recent_test_execution_activity(db_session):
+    """
+    Verifies that a run created >2h ago is NOT aborted if it executed test cases
+    within the stale threshold window.
+    """
+    repo = Repository(
+        name=f"testact-repo-{uuid.uuid4().hex[:6]}",
+        owner="TestOrg",
+        clone_url="https://github.com/TestOrg/ta.git",
+        default_branch="main",
+    )
+    db_session.add(repo)
+    db_session.flush()
+
+    # Created 3.5 hours ago, but a test result executed 15 minutes ago
+    run_with_tests = PipelineRun(
+        id=f"testact-run-{uuid.uuid4().hex[:8]}",
+        repository_id=repo.id,
+        workflow_name="Active Heavy Test Suite",
+        status="RUNNING",
+        created_at=datetime.now(UTC) - timedelta(hours=3, minutes=30),
+        total_duration_sec=0.0,
+    )
+    db_session.add(run_with_tests)
+    db_session.flush()
+
+    test_case = TestCase(
+        repository_id=repo.id,
+        test_identifier="tests/test_suite.py::test_integration_large",
+        file_path="tests/test_suite.py",
+        function_name="test_integration_large",
+    )
+    db_session.add(test_case)
+    db_session.flush()
+
+    test_res = TestResult(
+        pipeline_run_id=run_with_tests.id,
+        test_case_id=test_case.id,
+        status="PASSED",
+        duration_ms=45000.0,
+        executed_at=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    db_session.add(test_res)
+    db_session.commit()
+
+    res = reconcile_stale_runs(db_session, stale_threshold_hours=2.0)
+    db_session.refresh(run_with_tests)
+
+    # Must NOT be aborted: preserved because test execution is fresh
+    assert run_with_tests.status == "RUNNING"
+    skipped_ids = [item["run_id"] for item in res["active_skipped"]]
+    assert run_with_tests.id in skipped_ids
+
+    # Clean up
+    db_session.delete(test_res)
+    db_session.delete(test_case)
+    db_session.delete(run_with_tests)
+    db_session.commit()
+
+
+def test_late_runner_completion_transitions_aborted_to_terminal(db_session):
+    """
+    Verifies that if a runner was reconciled to ABORTED but eventually completes,
+    complete_pipeline_run accepts the late terminal status and logs LATE_RUNNER_COMPLETION_RECORDED.
+    """
+    repo = Repository(
+        name=f"late-repo-{uuid.uuid4().hex[:6]}",
+        owner="TestOrg",
+        clone_url="https://github.com/TestOrg/late.git",
+        default_branch="main",
+    )
+    db_session.add(repo)
+    db_session.flush()
+
+    run = PipelineRun(
+        id=f"late-run-{uuid.uuid4().hex[:8]}",
+        repository_id=repo.id,
+        workflow_name="Autonomous DevOps CI",
+        status="ABORTED",
+        created_at=datetime.now(UTC) - timedelta(hours=3),
+        total_duration_sec=10800.0,
+        fallback_reason="Orphaned uncompleted execution recovered during reconciliation",
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    completed = DecisionEngine.complete_pipeline_run(
+        db=db_session,
+        pipeline_run_id=run.id,
+        status="SUCCESS",
+        total_duration_sec=142.5,
+    )
+
+    assert completed is not None
+    assert completed.status == "SUCCESS"
+    assert completed.total_duration_sec == 142.5
+
+    # Verify audit log entry
+    audit = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.entity_id == run.id,
+            AuditLog.event_type == "LATE_RUNNER_COMPLETION_RECORDED",
+        )
+        .first()
+    )
+    assert audit is not None
+    assert "ABORTED to SUCCESS" in audit.details
+    assert "Late completion: True" in audit.details
+
+    # Clean up
+    db_session.delete(run)
+    db_session.commit()
+
+
 def test_model_manager_loads_genuine_certified_models():
     """
     Verifies that ModelManager loads genuine models and properly certifies readiness.
@@ -365,6 +538,6 @@ def test_all_seven_dashboard_routes_render_cleanly(client):
         if path == "/dashboard/overview":
             assert "Estimated (20.0s standard suite baseline)" in html
         elif path == "/dashboard/ai-insights":
-            assert "Trained & Certified" in html
+            assert "Verified Model Loaded" in html
         elif path == "/dashboard/observability":
             assert "Anomalies Flagged" in html

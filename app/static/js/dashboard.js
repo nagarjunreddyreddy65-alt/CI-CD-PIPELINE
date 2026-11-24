@@ -207,7 +207,7 @@ document.head.appendChild(style);
 /**
  * Overview View: Duration Trend Line Chart & Decision Doughnut
  */
-function initOverviewCharts(trendLabels, durationData, optimizedCount, fallbackCount) {
+function initOverviewCharts(trendLabels, durationData, optimizedCount, fallbackCount, unplannedCount) {
   const trendCtx = document.getElementById("durationTrendChart");
   if (trendCtx && typeof Chart !== "undefined") {
     const labels = trendLabels && trendLabels.length ? trendLabels : [];
@@ -257,15 +257,18 @@ function initOverviewCharts(trendLabels, durationData, optimizedCount, fallbackC
   if (decisionCtx && typeof Chart !== "undefined") {
     const opt = Number(optimizedCount) || 0;
     const fall = Number(fallbackCount) || 0;
-    const total = opt + fall;
+    const unpl = Number(unplannedCount) || 0;
+    const total = opt + fall + unpl;
 
     new Chart(decisionCtx, {
       type: "doughnut",
       data: {
-        labels: total > 0 ? ["Optimized AST Execution", "Full-Suite Fallback"] : ["No Executions Yet"],
+        labels: total > 0
+          ? ["Planned Optimized", "Deterministic Fallback", "Direct / Baseline"]
+          : ["No Executions Yet"],
         datasets: [{
-          data: total > 0 ? [opt, fall] : [1],
-          backgroundColor: total > 0 ? ["#10b981", "#f59e0b"] : ["#1e293b"],
+          data: total > 0 ? [opt, fall, unpl] : [1],
+          backgroundColor: total > 0 ? ["#10b981", "#8b5cf6", "#64748b"] : ["#1e293b"],
           borderColor: "#0f172a",
           borderWidth: 3,
           hoverOffset: 4,

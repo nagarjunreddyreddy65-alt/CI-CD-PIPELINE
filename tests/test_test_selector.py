@@ -6,11 +6,25 @@ from app.optimization.test_selector import SelectedTestPlan, TestSelector
 
 
 def test_reduction_percentage_calculation():
+    """Verifies reduction calculation across full-suite, optimized, zero-test, and invalid-count scenarios."""
     selector = TestSelector()
+    # Optimized scenarios
     assert selector.calculate_reduction(100, 20) == 80.0
-    assert selector.calculate_reduction(50, 50) == 0.0
+    assert selector.calculate_reduction(141, 9) == 93.62
     assert selector.calculate_reduction(10, 0) == 100.0
+
+    # Full-suite scenarios (no reduction)
+    assert selector.calculate_reduction(50, 50) == 0.0
+    assert selector.calculate_reduction(141, 141) == 0.0
+
+    # Zero-test scenarios safely handled
     assert selector.calculate_reduction(0, 0) == 0.0
+    assert selector.calculate_reduction(0, 5) == 0.0
+
+    # Invalid-count scenarios safely handled
+    assert selector.calculate_reduction(-10, 5) == 0.0
+    assert selector.calculate_reduction(100, -5) == 0.0
+    assert selector.calculate_reduction(50, 60) == 0.0
 
 
 def test_build_test_plan_optimized():

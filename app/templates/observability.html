@@ -37,11 +37,11 @@
       <span class="kpi-title">Anomalies Flagged</span>
       <span class="badge badge-warning">Z-Score &ge; 2.5</span>
     </div>
-    <div class="kpi-value" style="color: {% if anomalies_count > 0 %}var(--accent-warning-text){% else %}var(--accent-success-text){% endif %};">
+    <div class="kpi-value" style="color: {% if anomalies_count > 0 %}var(--accent-warning-text){% elif anomaly_status == 'INSUFFICIENT_SAMPLES' %}var(--accent-warning-text){% else %}var(--accent-success-text){% endif %};">
       {% if anomaly_status == 'PENDING_TELEMETRY' %}
         0 <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">(Pending Telemetry)</span>
       {% elif anomaly_status == 'INSUFFICIENT_SAMPLES' %}
-        0 <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">(Baseline Forming)</span>
+        <span style="font-size: 1.1rem; font-weight: 600;">INSUFFICIENT_SAMPLES</span>
       {% else %}
         {{ anomalies_count }}
       {% endif %}
@@ -51,7 +51,7 @@
         {% if anomaly_status == 'PENDING_TELEMETRY' %}
           Awaiting telemetry ingestion
         {% elif anomaly_status == 'INSUFFICIENT_SAMPLES' %}
-          {{ total_telemetry_records }}/3 min samples collected
+          {{ total_telemetry_records }}/{{ min_required_samples }} samples collected (requires &ge; {{ min_required_samples }} for baseline)
         {% elif anomalies_count == 0 %}
           Healthy statistical baseline (no outliers)
         {% else %}

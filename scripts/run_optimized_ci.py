@@ -202,6 +202,12 @@ def main():
     parser.add_argument("--force-full", action="store_true", help="Manually force full test suite")
     parser.add_argument("--repo-name", default="AutonomousDevOps/CI-CD-PIPELINE")
     parser.add_argument("--branch", default=os.getenv("GITHUB_REF_NAME", "main"))
+    parser.add_argument(
+        "--changed-files",
+        nargs="*",
+        default=None,
+        help="Explicit list of changed files (path:MODIFIED:added:deleted or path)",
+    )
 
     args = parser.parse_args()
 
@@ -211,7 +217,24 @@ def main():
     print("=" * 70)
 
     # 1. Identify Changed Files
-    changed_files = get_git_changed_files(args.base_ref)
+    if args.changed_files:
+        changed_files = []
+        for cf in args.changed_files:
+            parts = cf.split(":")
+            fpath = parts[0].replace("\\", "/")
+            ctype = parts[1] if len(parts) > 1 else "MODIFIED"
+            ladd = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 10
+            ldel = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 2
+            changed_files.append(
+                {
+                    "file_path": fpath,
+                    "change_type": ctype,
+                    "lines_added": ladd,
+                    "lines_deleted": ldel,
+                }
+            )
+    else:
+        changed_files = get_git_changed_files(args.base_ref)
     commit_meta = get_commit_metadata()
 
     print(f"📌 Repository: {args.repo_name} | Branch: {args.branch}")
@@ -344,14 +367,17 @@ def main():
                     "total_duration_sec": duration_sec,
                     "status": terminal_status,
                 }
-                httpx.post(
+                res = httpx.post(
                     f"{args.api_url.rstrip('/')}/api/v1/telemetry/record",
                     json=telemetry_payload,
                     headers=headers,
                     timeout=5.0,
                 )
+                res.raise_for_status()
                 reported = True
-                print(f"📡 Execution telemetry and status '{terminal_status}' reported to backend.")
+                print(
+                    f"📡 Execution telemetry and status '{terminal_status}' reported to backend (HTTP {res.status_code})."
+                )
             except (httpx.HTTPError, OSError) as e:
                 print(f"⚠️  Failed to record telemetry to backend: {e}")
 
@@ -365,17 +391,18 @@ def main():
                         if returncode == 0
                         else "Execution failed with non-zero exit code",
                     }
-                    httpx.post(
+                    comp_res = httpx.post(
                         f"{args.api_url.rstrip('/')}/api/v1/plans/runs/{plan['pipeline_run_id']}/complete",
                         json=completion_payload,
                         headers=headers,
                         timeout=5.0,
                     )
+                    comp_res.raise_for_status()
                     print(
-                        f"📡 Terminal status '{terminal_status}' confirmed via completion endpoint."
+                        f"📡 Terminal status '{terminal_status}' confirmed via completion endpoint (HTTP {comp_res.status_code})."
                     )
                 except (httpx.HTTPError, OSError) as e:
-                    print(f"⚠️  Failed to record terminal status to backend: {e}")
+                    print(f"⚠️  Failed to record terminal status to backend fallback: {e}")
 
     print("\n" + "=" * 70)
     print("📊 EXECUTION TELEMETRY & RESULTS")

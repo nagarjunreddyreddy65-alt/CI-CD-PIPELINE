@@ -25,7 +25,7 @@ from app.ml.runtime_predictor import RuntimePredictor
 @dataclass(frozen=True)
 class VerifiedTelemetryDataset:
     """
-    Cryptographically sealed, immutable telemetry dataset extracted directly from database entities.
+    Cryptographically sealed, verified telemetry dataset extracted directly from database entities.
     Establishes an unforgeable trust boundary:
     1. Sealed with HMAC-SHA256 keyed by settings.SECRET_KEY over all array bytes, target bytes,
        run IDs, and extraction metadata.

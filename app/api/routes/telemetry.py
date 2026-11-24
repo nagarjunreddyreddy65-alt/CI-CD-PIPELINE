@@ -5,6 +5,7 @@ and correlate systemic failure events.
 """
 
 from datetime import UTC, datetime
+from enum import Enum
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
@@ -19,6 +20,16 @@ from app.telemetry.event_correlator import CorrelatedEventGroup, EventCorrelator
 router = APIRouter(prefix="/telemetry", tags=["Telemetry & Observability"])
 
 
+class PipelineLifecycleStatus(str, Enum):
+    """Supported pipeline execution lifecycle status values."""
+
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    ABORTED = "ABORTED"
+    CANCELLED = "CANCELLED"
+
+
 class TelemetryRecordRequest(BaseModel):
     pipeline_run_id: str = Field(..., json_schema_extra={"example": "run-uuid-12345"})
     cpu_percent_avg: float = Field(..., ge=0.0, le=100.0, json_schema_extra={"example": 42.5})
@@ -26,7 +37,7 @@ class TelemetryRecordRequest(BaseModel):
     disk_io_mb: float = Field(0.0, ge=0.0, json_schema_extra={"example": 12.4})
     runner_os: str = Field("Ubuntu-Latest", json_schema_extra={"example": "Ubuntu-Latest"})
     total_duration_sec: float | None = Field(None, ge=0.0, json_schema_extra={"example": 18.5})
-    status: str | None = Field("SUCCESS", json_schema_extra={"example": "SUCCESS"})
+    status: PipelineLifecycleStatus | None = Field(None, json_schema_extra={"example": "SUCCESS"})
 
 
 class AnomalyDetectionRequest(BaseModel):
@@ -77,9 +88,15 @@ def record_telemetry(
     run = db.query(PipelineRun).filter(PipelineRun.id == req.pipeline_run_id).first()
     if run:
         if req.status:
-            run.status = req.status
-            if req.status in ("SUCCESS", "FAILED", "ABORTED", "CANCELLED"):
-                run.completed_at = datetime.now(UTC)
+            target_status = req.status.value if hasattr(req.status, "value") else str(req.status)
+            terminal_states = {"SUCCESS", "FAILED", "ABORTED", "CANCELLED"}
+            # Prevent reverting terminal executions back to RUNNING
+            if run.status in terminal_states and target_status == "RUNNING":
+                pass
+            else:
+                run.status = target_status
+                if target_status in terminal_states and not run.completed_at:
+                    run.completed_at = datetime.now(UTC)
         if req.total_duration_sec is not None:
             run.total_duration_sec = req.total_duration_sec
         elif run.created_at and run.total_duration_sec == 0.0 and run.completed_at:

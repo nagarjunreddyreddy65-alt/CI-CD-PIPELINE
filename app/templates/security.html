@@ -31,17 +31,17 @@
     </div>
   </div>
 
-  <!-- Secret Leaks Detected -->
+  <!-- Secret Scan Detections -->
   <div class="kpi-card warning">
     <div class="kpi-header">
-      <span class="kpi-title">Secret Leaks Detected</span>
-      <span class="badge badge-warning">Gitleaks</span>
+      <span class="kpi-title">Secret Scan Detections</span>
+      <span class="badge badge-warning">Cumulative</span>
     </div>
     <div class="kpi-value" style="color: {% if security_summary.secret_leaks > 0 %}var(--accent-danger-text){% else %}var(--accent-success-text){% endif %};">
       {{ security_summary.secret_leaks }}
     </div>
     <div class="kpi-trend">
-      <span>All tokens redacted prior to storage</span>
+      <span>Cumulative scan detections (not unique keys); all tokens redacted</span>
     </div>
   </div>
 
