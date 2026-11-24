@@ -18,8 +18,8 @@ The repository maintains an automated regression and verification suite:
 | Test Suite | Location | Tests Count | Scope | Pass Rate |
 | :--- | :--- | :---: | :--- | :---: |
 | **Sample Target Application** | `tests_sample_app/` | 24 | Unit & regression tests covering `math_ops`, `string_ops`, `metrics_calculator`, `user_service`, `security_service` (Auth), and `payment_processor` (Billing). | **100% (24/24)** |
-| **Autonomous DevOps Core** | `tests/` | 181 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 33 P0/P1 adversarial remediation scenarios, 6 master remediation tests, 15 end-to-end scenario evaluations, controlled multi-defect injection, API authentication (constant-time token verification on write & operational read endpoints, role separation), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (181/181)** |
-| **Total Automated Test Suite** | Combined | **205** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (205/205)** |
+| **Autonomous DevOps Core** | `tests/` | 193 | Full verification of AST parsing, NetworkX graph modeling, ML model loading & out-of-sample holdout validation, Decision Engine, all 21 Safety Policy fallback rules, 33 P0/P1 adversarial remediation scenarios, 6 master remediation tests, 12 lifecycle/integrity/stale-reconciliation tests, 16 end-to-end scenario evaluations, controlled multi-defect injection, API authentication (constant-time token verification on write & operational read endpoints, role separation), database persistence fail-closed, fail-fast production startup, HTTP 503 readiness probes, path traversal rejection, production configuration hardening, psutil telemetry, Z-score anomaly detector, failure correlator, Bandit/pip-audit scanners, FastAPI REST endpoints, and web dashboard. | **100% (193/193)** |
+| **Total Automated Test Suite** | Combined | **217** | Full-stack automated verification across unit, integration, safety scenario, security, and API layers. | **100% (217/217)** |
 
 ### Execution Command:
 ```bash
@@ -137,3 +137,21 @@ For final-year evaluation and future IEEE research paper preparation:
 1. **Runtime Improvement vs. Test Count Reduction:** In small test suites (sub-second execution), process invocation overhead can mask raw execution time savings. In large enterprise suites (e.g., 30+ minutes), a 62.5% test reduction translates directly to proportional cloud compute and wall-clock savings.
 2. **Escaped Defect Rate:** Defect escape rates are empirically verified at 0.0% for mapped code modules under controlled defect injection. Escaped defects are bounded by deterministic safety rules (Rules 9, 10, 11, 12, 13), ensuring that unmapped or dynamic dependencies always fall back to full suite execution.
 3. **Safety Fallback as Primary Defense:** The machine learning models serve exclusively as optimization advisors; the deterministic safety policy retains final authority over all execution decisions.
+
+---
+
+## 9. Machine Learning Empirical Evaluation Figures
+
+Comprehensive publication-quality performance graphs and empirical figures have been generated and documented in [`docs/ML_EVALUATION_RESULTS.md`](ML_EVALUATION_RESULTS.md):
+- **Confusion Matrix:** Held-out test split classification accuracy ([`figures/ml_evaluation/01_confusion_matrix.png`](figures/ml_evaluation/01_confusion_matrix.png)).
+- **ROC-AUC Curve:** True Positive vs. False Positive rate ([`figures/ml_evaluation/02_roc_auc_curve.png`](figures/ml_evaluation/02_roc_auc_curve.png)).
+- **Feature Importance Comparison:** 10-dimensional pre-execution feature space across both models ([`figures/ml_evaluation/03_feature_importance.png`](figures/ml_evaluation/03_feature_importance.png)).
+- **Runtime Regression (Actual vs. Predicted):** $R^2 = 0.832$, $\text{MAE} = 1.68s$ ([`figures/ml_evaluation/04_runtime_actual_vs_predicted.png`](figures/ml_evaluation/04_runtime_actual_vs_predicted.png)).
+- **Telemetry Z-Score Anomaly Model:** Baseline Gaussian distribution and $|Z| \ge 2.5$ threshold triggers ([`figures/ml_evaluation/05_zscore_anomaly_detection.png`](figures/ml_evaluation/05_zscore_anomaly_detection.png)).
+- **Master Evaluation Multi-Panel Figure:** Combined IEEE publication graphic ([`figures/ml_evaluation/06_ml_evaluation_master_panel.png`](figures/ml_evaluation/06_ml_evaluation_master_panel.png)).
+
+Reproduce all figures at any time:
+```bash
+python scripts/generate_ml_evaluation_graphs.py
+```
+

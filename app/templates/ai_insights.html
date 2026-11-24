@@ -100,6 +100,49 @@
   </div>
 </div>
 
+<!-- Empirical Machine Learning Evaluation & Performance Curves -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Empirical ML Evaluation Curves & Performance Analytics</div>
+      <div class="card-subtitle">Certified holdout test split benchmarks, ROC-AUC curve, feature importances, and runtime regression</div>
+    </div>
+    <div>
+      <a href="/static/graphs/06_ml_evaluation_master_panel.png" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
+        View High-Res Panel ↗
+      </a>
+    </div>
+  </div>
+  <div style="padding: 16px 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
+        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
+          Confusion Matrix (Holdout Split)
+        </div>
+        <img src="/static/graphs/01_confusion_matrix.png" alt="Confusion Matrix" style="width: 100%; height: auto; display: block;" loading="lazy">
+      </div>
+      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
+        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
+          ROC-AUC Performance Curve (1.00)
+        </div>
+        <img src="/static/graphs/02_roc_auc_curve.png" alt="ROC-AUC Curve" style="width: 100%; height: auto; display: block;" loading="lazy">
+      </div>
+      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
+        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
+          Runtime Actual vs. Predicted (R² = 0.832)
+        </div>
+        <img src="/static/graphs/04_runtime_actual_vs_predicted.png" alt="Runtime Actual vs Predicted" style="width: 100%; height: auto; display: block;" loading="lazy">
+      </div>
+      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
+        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
+          Pre-Execution Feature Importances
+        </div>
+        <img src="/static/graphs/03_feature_importance.png" alt="Feature Importance" style="width: 100%; height: auto; display: block;" loading="lazy">
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Prediction Inference Ledger Table -->
 <div class="card">
   <div class="card-header">
