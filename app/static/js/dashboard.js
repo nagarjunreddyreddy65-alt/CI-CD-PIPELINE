@@ -87,8 +87,10 @@ function showToast(message) {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;">
       <polyline points="20 6 9 17 4 12"></polyline>
     </svg>
-    <span>${message}</span>
   `;
+  const toastMessage = document.createElement("span");
+  toastMessage.textContent = message;
+  toast.appendChild(toastMessage);
   document.body.appendChild(toast);
 
   setTimeout(() => {
@@ -137,7 +139,14 @@ function filterTable(tableId, query) {
       noMatchRow = document.createElement("tr");
       noMatchRow.className = "no-match-row";
       const colCount = table.querySelectorAll("thead th").length || 7;
-      noMatchRow.innerHTML = `<td colspan="${colCount}" class="empty-state" style="padding: 24px; text-align: center; color: var(--text-muted);">No matching records found for query "${query}"</td>`;
+      const td = document.createElement("td");
+      td.colSpan = colCount;
+      td.className = "empty-state";
+      td.style.padding = "24px";
+      td.style.textAlign = "center";
+      td.style.color = "var(--text-muted)";
+      td.textContent = `No matching records found for query "${query}"`;
+      noMatchRow.appendChild(td);
       table.querySelector("tbody").appendChild(noMatchRow);
     } else {
       noMatchRow.style.display = "";
