@@ -47,38 +47,18 @@ class PipelineFeatures:
         self, branch: str = "main", build_number: int | None = None
     ) -> np.ndarray:
         """
-        Maps pre-execution git commit and telemetry features into the standardized 10-feature
-        vector expected by the trained Travis CI models:
-        [build_number, prior_build_count, previous_failure, previous_duration_sec,
-         historical_failure_rate, rolling_fail_rate_5, rolling_duration_avg_5,
-         is_pull_request, is_master_branch, prior_test_count]
-        """
-        b_num = float(build_number or max(10, self.changed_files_count * 5 + 50))
-        prior_b = max(1.0, b_num - 1.0)
-        prev_fail = 1.0 if self.historical_failure_rate >= 0.50 else 0.0
-        prev_dur = max(1.0, float(self.previous_execution_duration))
-        hist_fail = float(self.historical_failure_rate)
-        roll_fail = hist_fail
-        roll_dur = prev_dur
-        is_pr = 0.0 if branch.lower() in ("main", "master") else 1.0
-        is_master = 1.0 if branch.lower() in ("main", "master") else 0.0
-        prior_tests = float(self.selected_tests_count)
+        Deprecated & Disabled: Live Git commit features cannot be approximated into historical
+        Travis CI build schema without violating feature semantics.
 
-        return np.array(
-            [
-                b_num,
-                prior_b,
-                prev_fail,
-                prev_dur,
-                hist_fail,
-                roll_fail,
-                roll_dur,
-                is_pr,
-                is_master,
-                prior_tests,
-            ],
-            dtype=np.float64,
-        ).reshape(1, -1)
+        Raises:
+            NotImplementedError: Always, to prevent silent, misleading feature transformations.
+        """
+        raise NotImplementedError(
+            "Unsupported live feature transformation: mapping live Git diffs to historical "
+            "TravisTorrent schema is semantically invalid. TravisTorrent models are strictly restricted "
+            "to historical benchmark evaluation on raw Travis CI feature vectors. "
+            "For live CI prediction, use models trained on genuine repository telemetry (to_array())."
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Converts features to JSON-serializable dictionary."""

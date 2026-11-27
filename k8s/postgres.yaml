@@ -38,17 +38,29 @@ spec:
             - containerPort: 5432
           env:
             - name: POSTGRES_USER
-              value: "devops_user"
+              valueFrom:
+                secretKeyRef:
+                  name: autonomous-devops-secrets
+                  key: postgres-user
             - name: POSTGRES_PASSWORD
-              value: "devops_secure_password_2026"
+              valueFrom:
+                secretKeyRef:
+                  name: autonomous-devops-secrets
+                  key: postgres-password
             - name: POSTGRES_DB
-              value: "autonomous_devops_db"
+              valueFrom:
+                secretKeyRef:
+                  name: autonomous-devops-secrets
+                  key: postgres-db
           volumeMounts:
             - mountPath: /var/lib/postgresql/data
               name: postgres-storage
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "devops_user", "-d", "autonomous_devops_db"]
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:

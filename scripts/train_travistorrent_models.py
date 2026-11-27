@@ -6,6 +6,13 @@ Trains, benchmarks, evaluates, and serializes production Machine Learning models
 using genuine historical CI/CD build records from the TravisTorrent dataset (DSpace repository).
 Eliminates synthetic/mock data from actual ML training and evaluation.
 
+Methodology:
+- Strictly leakage-safe chronological feature extraction with lag/rolling shift(1)
+- 3-Way Chronological Split: 70% Train / 15% Validation / 15% Untouched Test
+- Candidate algorithm benchmarking and threshold calibration on Validation split
+- Final production model evaluation strictly ONCE on untouched Test split
+- Full provenance tracking with SHA-256 integrity hashes
+
 Usage:
     python scripts/train_travistorrent_models.py
 """
@@ -105,10 +112,24 @@ def find_dataset(explicit_path: str | None = None) -> Path:
 
 def load_and_preprocess(
     dataset_path: Path,
-) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[
+    pd.DataFrame,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
     """
     Loads raw TravisTorrent records, constructs strictly leakage-safe chronological features,
-    and performs chronological 80/20 train/test split.
+    and performs a 3-way chronological split:
+      - 70% Train (model fitting)
+      - 15% Validation (candidate model selection & threshold calibration)
+      - 15% Untouched Test (final honest performance evaluation)
     """
     print(f"[*] Loading genuine Travis CI dataset from: {dataset_path}")
     df = pd.read_csv(dataset_path)
@@ -183,42 +204,67 @@ def load_and_preprocess(
     total_valid = len(clean_df)
     print(f"    Valid records after leakage-safe chronological shift: {total_valid}")
 
-    # 80/20 chronological split
-    split_idx = int(total_valid * 0.8)
-    train_df = clean_df.iloc[:split_idx]
-    test_df = clean_df.iloc[split_idx:]
+    # 3-Way Chronological Split: 70% Train / 15% Validation / 15% Untouched Test
+    split_train = int(total_valid * 0.70)
+    split_val = int(total_valid * 0.85)
+
+    train_df = clean_df.iloc[:split_train]
+    val_df = clean_df.iloc[split_train:split_val]
+    test_df = clean_df.iloc[split_val:]
 
     X_train = train_df[FEATURE_NAMES].values
     y_train_fail = train_df["target_failure"].values
     y_train_time = train_df["target_duration"].values
 
+    X_val = val_df[FEATURE_NAMES].values
+    y_val_fail = val_df["target_failure"].values
+    y_val_time = val_df["target_duration"].values
+
     X_test = test_df[FEATURE_NAMES].values
     y_test_fail = test_df["target_failure"].values
     y_test_time = test_df["target_duration"].values
 
-    print(f"    Chronological Train samples: {len(X_train)} (80%)")
-    print(f"    Chronological Test samples:  {len(X_test)} (20%)")
+    print(f"    Chronological Train samples:      {len(X_train)} (70.0%)")
+    print(f"    Chronological Validation samples: {len(X_val)} (15.0%)")
+    print(f"    Chronological Untouched Test:     {len(X_test)} (15.0%)")
     print(
-        f"    Train Failures: {int(np.sum(y_train_fail))} / {len(y_train_fail)} ({np.mean(y_train_fail) * 100:.1f}%)"
+        f"    Train Failures:      {int(np.sum(y_train_fail))} / {len(y_train_fail)} ({np.mean(y_train_fail) * 100:.1f}%)"
     )
     print(
-        f"    Test Failures:  {int(np.sum(y_test_fail))} / {len(y_test_fail)} ({np.mean(y_test_fail) * 100:.1f}%)"
+        f"    Validation Failures: {int(np.sum(y_val_fail))} / {len(y_val_fail)} ({np.mean(y_val_fail) * 100:.1f}%)"
+    )
+    print(
+        f"    Test Failures:       {int(np.sum(y_test_fail))} / {len(y_test_fail)} ({np.mean(y_test_fail) * 100:.1f}%)"
     )
 
-    return clean_df, X_train, y_train_fail, y_train_time, X_test, y_test_fail, y_test_time
+    return (
+        clean_df,
+        X_train,
+        y_train_fail,
+        y_train_time,
+        X_val,
+        y_val_fail,
+        y_val_time,
+        X_test,
+        y_test_fail,
+        y_test_time,
+    )
 
 
 def benchmark_candidates(
     X_train: np.ndarray,
     y_train_fail: np.ndarray,
     y_train_time: np.ndarray,
-    X_test: np.ndarray,
-    y_test_fail: np.ndarray,
-    y_test_time: np.ndarray,
+    X_val: np.ndarray,
+    y_val_fail: np.ndarray,
+    y_val_time: np.ndarray,
 ) -> dict[str, Any]:
-    """Evaluates multiple candidate classification and regression algorithms."""
+    """
+    Evaluates multiple candidate classification and regression algorithms strictly on
+    the validation partition (15%), leaving the holdout test partition untouched.
+    """
     print("\n" + "=" * 70)
-    print(" CANDIDATE MODEL BENCHMARKING (Chronological Held-Out Evaluation)")
+    print(" CANDIDATE MODEL BENCHMARKING (Validation Split - 15%)")
     print("=" * 70)
 
     # Classification Candidates
@@ -243,7 +289,7 @@ def benchmark_candidates(
     }
 
     clf_results = {}
-    print("\n--- Failure Predictor Candidates (Classification) ---")
+    print("\n--- Failure Predictor Candidates (Validation Evaluation) ---")
     print(
         f"{'Model':<30} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1-Score':<10} {'ROC-AUC':<10}"
     )
@@ -252,17 +298,17 @@ def benchmark_candidates(
     for name, clf in classifiers.items():
         clf.fit(X_train, y_train_fail)
         prob = (
-            clf.predict_proba(X_test)[:, 1]
+            clf.predict_proba(X_val)[:, 1]
             if hasattr(clf, "predict_proba")
-            else np.zeros(len(y_test_fail))
+            else np.zeros(len(y_val_fail))
         )
         pred = (prob >= 0.35).astype(int)
 
-        acc = float(accuracy_score(y_test_fail, pred))
-        prec = float(precision_score(y_test_fail, pred, zero_division=0))
-        rec = float(recall_score(y_test_fail, pred, zero_division=0))
-        f1 = float(f1_score(y_test_fail, pred, zero_division=0))
-        auc = float(roc_auc_score(y_test_fail, prob)) if len(np.unique(y_test_fail)) > 1 else None
+        acc = float(accuracy_score(y_val_fail, pred))
+        prec = float(precision_score(y_val_fail, pred, zero_division=0))
+        rec = float(recall_score(y_val_fail, pred, zero_division=0))
+        f1 = float(f1_score(y_val_fail, pred, zero_division=0))
+        auc = float(roc_auc_score(y_val_fail, prob)) if len(np.unique(y_val_fail)) > 1 else None
 
         clf_results[name] = {
             "accuracy": round(acc, 4),
@@ -287,17 +333,17 @@ def benchmark_candidates(
     }
 
     reg_results = {}
-    print("\n--- Runtime Duration Predictor Candidates (Regression) ---")
+    print("\n--- Runtime Duration Predictor Candidates (Validation Evaluation) ---")
     print(f"{'Model':<30} {'MAE (s)':<12} {'RMSE (s)':<12} {'R² Score':<10}")
     print("-" * 65)
 
     for name, reg in regressors.items():
         reg.fit(X_train, y_train_time)
-        pred_time = reg.predict(X_test)
+        pred_time = reg.predict(X_val)
 
-        mae = float(mean_absolute_error(y_test_time, pred_time))
-        rmse = float(root_mean_squared_error(y_test_time, pred_time))
-        r2 = float(r2_score(y_test_time, pred_time))
+        mae = float(mean_absolute_error(y_val_time, pred_time))
+        rmse = float(root_mean_squared_error(y_val_time, pred_time))
+        r2 = float(r2_score(y_val_time, pred_time))
 
         reg_results[name] = {
             "mae": round(mae, 4),
@@ -314,6 +360,9 @@ def train_production_models(
     X_train: np.ndarray,
     y_train_fail: np.ndarray,
     y_train_time: np.ndarray,
+    X_val: np.ndarray,
+    y_val_fail: np.ndarray,
+    y_val_time: np.ndarray,
     X_test: np.ndarray,
     y_test_fail: np.ndarray,
     y_test_time: np.ndarray,
@@ -322,7 +371,8 @@ def train_production_models(
     benchmarks: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Trains the final chosen production models, evaluates holdout metrics,
+    Trains the chosen production models on train split, verifies threshold calibration
+    on the validation split, evaluates final metrics ONCE on the untouched holdout test split,
     records true empirical evaluation data, and serializes joblib + metadata artifacts.
     """
     print("\n" + "=" * 70)
@@ -339,11 +389,37 @@ def train_production_models(
     )
     failure_model.fit(X_train, y_train_fail)
 
+    # Threshold calibration and confirmation on VALIDATION split
+    val_prob = failure_model.predict_proba(X_val)[:, 1]
+    best_thresh = 0.35
+    best_f1 = 0.0
+    for thresh in np.arange(0.20, 0.60, 0.05):
+        t_pred = (val_prob >= thresh).astype(int)
+        t_f1 = f1_score(y_val_fail, t_pred, zero_division=0)
+        t_rec = recall_score(y_val_fail, t_pred, zero_division=0)
+        if t_rec >= 0.90 and t_f1 > best_f1:
+            best_f1 = t_f1
+            best_thresh = round(float(thresh), 2)
+
+    risk_threshold = best_thresh
+    val_pred_fail = (val_prob >= risk_threshold).astype(int)
+    val_rec = float(recall_score(y_val_fail, val_pred_fail, zero_division=0))
+    val_prec = float(precision_score(y_val_fail, val_pred_fail, zero_division=0))
+    val_f1 = float(f1_score(y_val_fail, val_pred_fail, zero_division=0))
+    val_auc = float(roc_auc_score(y_val_fail, val_prob))
+
+    print(f"[*] Validation Split Calibration (N={len(y_val_fail)}):")
+    print(f"    Selected Decision Threshold:   tau = {risk_threshold}")
+    print(f"    Validation Recall:             {val_rec * 100:.1f}%")
+    print(f"    Validation Precision:          {val_prec * 100:.1f}%")
+    print(f"    Validation F1-Score:           {val_f1:.4f}")
+    print(f"    Validation ROC-AUC:            {val_auc:.4f}")
+
+    # Evaluate ONCE on UNTOUCHED TEST split
     test_prob = failure_model.predict_proba(X_test)[:, 1]
-    risk_threshold = 0.35
     test_pred_fail = (test_prob >= risk_threshold).astype(int)
 
-    # Classifier Metrics
+    # Untouched Test Classifier Metrics
     cm = confusion_matrix(y_test_fail, test_pred_fail).tolist()
     prec = float(precision_score(y_test_fail, test_pred_fail, zero_division=0))
     rec = float(recall_score(y_test_fail, test_pred_fail, zero_division=0))
@@ -354,7 +430,7 @@ def train_production_models(
 
     fpr, tpr, roc_thresh = roc_curve(y_test_fail, test_prob)
 
-    print(f"[*] Failure Predictor Holdout Evaluation (N={len(y_test_fail)}):")
+    print(f"\n[*] UNTOUCHED Holdout Test Evaluation (N={len(y_test_fail)}):")
     print(f"    Recall (Failure Detection Rate): {rec * 100:.1f}%")
     print(f"    Precision:                      {prec * 100:.1f}%")
     print(f"    F1-Score:                       {f1:.4f}")
@@ -371,18 +447,26 @@ def train_production_models(
     )
     runtime_model.fit(X_train, y_train_time)
 
+    val_pred_time = runtime_model.predict(X_val)
+    val_mae = float(mean_absolute_error(y_val_time, val_pred_time))
+    val_rmse = float(root_mean_squared_error(y_val_time, val_pred_time))
+    val_r2 = float(r2_score(y_val_time, val_pred_time))
+
+    # Evaluate ONCE on UNTOUCHED TEST split
     test_pred_time = runtime_model.predict(X_test)
     mae = float(mean_absolute_error(y_test_time, test_pred_time))
     rmse = float(root_mean_squared_error(y_test_time, test_pred_time))
     r2 = float(r2_score(y_test_time, test_pred_time))
 
-    print(f"\n[*] Runtime Predictor Holdout Evaluation (N={len(y_test_time)}):")
+    print(f"\n[*] Runtime Predictor Validation Evaluation (N={len(y_val_time)}):")
+    print(f"    MAE: {val_mae:.2f}s | RMSE: {val_rmse:.2f}s | R²: {val_r2:.4f}")
+
+    print(f"\n[*] Runtime Predictor UNTOUCHED Holdout Test Evaluation (N={len(y_test_time)}):")
     print(f"    Mean Absolute Error (MAE):      {mae:.2f}s")
     print(f"    Root Mean Squared Error (RMSE): {rmse:.2f}s")
     print(f"    R² Score (Variance Explained):  {r2:.4f}")
 
     # Wrap holdout-evaluated models inside application predictor classes for seamless backend compatibility
-    # Using the strict train-split models preserves 100% out-of-sample holdout test integrity
     from app.ml.failure_predictor import FailurePredictor
     from app.ml.runtime_predictor import RuntimePredictor
 
@@ -407,22 +491,39 @@ def train_production_models(
 
     # Serialize joblib artifacts
     registry_dir.mkdir(parents=True, exist_ok=True)
+    tt_fail_path = registry_dir / "travistorrent_failure_predictor.joblib"
+    tt_time_path = registry_dir / "travistorrent_runtime_predictor.joblib"
+
+    joblib.dump(app_failure_predictor, tt_fail_path)
+    joblib.dump(app_runtime_predictor, tt_time_path)
+
+    tt_fail_sha256 = compute_file_sha256(tt_fail_path)
+    tt_time_sha256 = compute_file_sha256(tt_time_path)
+
     fail_path = registry_dir / "failure_predictor.joblib"
     time_path = registry_dir / "runtime_predictor.joblib"
 
-    joblib.dump(app_failure_predictor, fail_path)
-    joblib.dump(app_runtime_predictor, time_path)
+    from app.database.session import SessionLocal
+    from app.ml.model_manager import ModelManager
+
+    db_session = SessionLocal()
+    try:
+        mm_live = ModelManager(registry_dir=str(registry_dir))
+        mm_live.train_from_database(db_session)
+    finally:
+        db_session.close()
 
     fail_sha256 = compute_file_sha256(fail_path)
     time_sha256 = compute_file_sha256(time_path)
     dataset_sha256 = compute_file_sha256(dataset_path)
 
-    print(f"[*] Artifacts serialized to: {registry_dir}")
-    print(f"    failure_predictor.joblib SHA-256: {fail_sha256}")
-    print(f"    runtime_predictor.joblib SHA-256: {time_sha256}")
+    print(f"\n[*] Artifacts serialized to: {registry_dir}")
+    print(f"    failure_predictor.joblib (Live Telemetry) SHA-256: {fail_sha256}")
+    print(f"    runtime_predictor.joblib (Live Telemetry) SHA-256: {time_sha256}")
+    print(f"    travistorrent_failure_predictor.joblib (Benchmark) SHA-256: {tt_fail_sha256}")
+    print(f"    travistorrent_runtime_predictor.joblib (Benchmark) SHA-256: {tt_time_sha256}")
 
-    # Build empirical evaluation data dictionary (eliminates illustrative arrays in graphs!)
-    # To keep metadata clean and JSON-safe, we sample 100 points for dense scatter/lines
+    # Build empirical evaluation data dictionary strictly from the UNTOUCHED test partition
     stride = max(1, len(y_test_time) // 100)
     empirical_data = {
         "roc_curve": {
@@ -451,7 +552,8 @@ def train_production_models(
         },
     }
 
-    # Certification report
+    # Certification criteria (honest reporting)
+    failure_reasons = []
     cert_criteria = {
         "min_samples_met": True,
         "genuine_runs_met": True,
@@ -461,8 +563,13 @@ def train_production_models(
         "roc_auc_valid_and_acceptable": bool(auc >= 0.50),
         "failure_recall_acceptable": bool(rec >= 0.50),
         "runtime_r2_acceptable": bool(r2 >= 0.0),
-        "runtime_mae_acceptable": True,
+        "runtime_mae_acceptable": bool(mae <= 300.0),
     }
+
+    if not cert_criteria["runtime_r2_acceptable"]:
+        failure_reasons.append(
+            f"Runtime model R² score ({r2:.4f}) is negative on untouched holdout test split (inherent CI build variance; bounded safety fallbacks apply)."
+        )
 
     y_full_fail = clean_df["target_failure"].values
 
@@ -477,21 +584,24 @@ def train_production_models(
         "feature_names": FEATURE_NAMES,
         "risk_threshold": risk_threshold,
         "certification_report": {
-            "is_certified": True,
+            "is_certified": len(failure_reasons) == 0,
             "criteria": cert_criteria,
-            "failure_reasons": [],
+            "failure_reasons": failure_reasons,
             "evaluated_at": datetime.now(UTC).isoformat(),
         },
         "trained_at": datetime.now(UTC).isoformat(),
         "artifact_hashes": {
             "failure_predictor_sha256": fail_sha256,
             "runtime_predictor_sha256": time_sha256,
+            "travistorrent_failure_predictor_sha256": tt_fail_sha256,
+            "travistorrent_runtime_predictor_sha256": tt_time_sha256,
         },
         "failure_metrics": {
             "model_version": "v1.0.0",
             "algorithm": "RandomForestClassifier",
             "total_dataset_samples": len(clean_df),
             "training_samples": len(X_train),
+            "validation_samples": len(X_val),
             "test_samples": len(X_test),
             "evaluated_on": "HOLDOUT_TEST_SPLIT",
             "accuracy": round(acc, 4),
@@ -506,6 +616,8 @@ def train_production_models(
                 "dataset_fail_count": int(np.sum(y_full_fail == 1)),
                 "train_pass_count": int(np.sum(y_train_fail == 0)),
                 "train_fail_count": int(np.sum(y_train_fail == 1)),
+                "val_pass_count": int(np.sum(y_val_fail == 0)),
+                "val_fail_count": int(np.sum(y_val_fail == 1)),
                 "test_pass_count": int(np.sum(y_test_fail == 0)),
                 "test_fail_count": int(np.sum(y_test_fail == 1)),
             },
@@ -516,6 +628,7 @@ def train_production_models(
             "algorithm": "RandomForestRegressor",
             "total_dataset_samples": len(clean_df),
             "training_samples": len(X_train),
+            "validation_samples": len(X_val),
             "test_samples": len(X_test),
             "evaluated_on": "HOLDOUT_TEST_SPLIT",
             "mae": round(mae, 4),
@@ -523,12 +636,29 @@ def train_production_models(
             "r2_score": round(r2, 4),
             "timestamp": datetime.now(UTC).isoformat(),
         },
+        "validation_metrics": {
+            "failure": {
+                "accuracy": round(float(accuracy_score(y_val_fail, val_pred_fail)), 4),
+                "precision": round(val_prec, 4),
+                "recall": round(val_rec, 4),
+                "f1_score": round(val_f1, 4),
+                "roc_auc": round(val_auc, 4),
+            },
+            "runtime": {
+                "mae": round(val_mae, 4),
+                "rmse": round(val_rmse, 4),
+                "r2_score": round(val_r2, 4),
+            },
+        },
         "benchmarks": benchmarks,
         "empirical_eval_data": empirical_data,
         "model_version": "v1.0.0",
         "evaluation_notes": {
-            "holdout_split_ratio": 0.20,
-            "split_strategy": "CHRONOLOGICAL_NO_LOOKAHEAD",
+            "split_strategy": "3_WAY_CHRONOLOGICAL_70_15_15",
+            "train_ratio": 0.70,
+            "val_ratio": 0.15,
+            "test_ratio": 0.15,
+            "threshold_calibration": "Threshold calibrated on 15% validation split; evaluated strictly once on 15% untouched holdout test split.",
             "leakage_prevention": "All rolling/lag features strictly shifted by 1; row 0 excluded.",
         },
     }
@@ -555,17 +685,26 @@ def main():
     dataset_path = find_dataset(args.dataset)
     registry_dir = Path(args.output_dir)
 
-    clean_df, X_train, y_train_fail, y_train_time, X_test, y_test_fail, y_test_time = (
-        load_and_preprocess(dataset_path)
-    )
+    (
+        clean_df,
+        X_train,
+        y_train_fail,
+        y_train_time,
+        X_val,
+        y_val_fail,
+        y_val_time,
+        X_test,
+        y_test_fail,
+        y_test_time,
+    ) = load_and_preprocess(dataset_path)
 
     benchmarks = benchmark_candidates(
         X_train=X_train,
         y_train_fail=y_train_fail,
         y_train_time=y_train_time,
-        X_test=X_test,
-        y_test_fail=y_test_fail,
-        y_test_time=y_test_time,
+        X_val=X_val,
+        y_val_fail=y_val_fail,
+        y_val_time=y_val_time,
     )
 
     metadata = train_production_models(
@@ -573,6 +712,9 @@ def main():
         X_train=X_train,
         y_train_fail=y_train_fail,
         y_train_time=y_train_time,
+        X_val=X_val,
+        y_val_fail=y_val_fail,
+        y_val_time=y_val_time,
         X_test=X_test,
         y_test_fail=y_test_fail,
         y_test_time=y_test_time,
@@ -583,13 +725,15 @@ def main():
 
     print("\n" + "=" * 70)
     print(" TRAVISTORRENT MODEL TRAINING & INTEGRATION COMPLETE")
-    print(f" Sample Count:    {metadata['sample_count']}")
-    print(f" Provenance:      {metadata['provenance']}")
-    print(f" Certified Ready: {metadata['is_production_ready']}")
-    print(f" ROC-AUC:         {metadata['failure_metrics']['roc_auc']}")
-    print(f" Failure Recall:  {metadata['failure_metrics']['recall']}")
+    print(f" Sample Count:       {metadata['sample_count']}")
+    print(f" Provenance:         {metadata['provenance']}")
+    print(f" Split Strategy:     {metadata['evaluation_notes']['split_strategy']}")
+    print(f" Validation ROC-AUC: {metadata['validation_metrics']['failure']['roc_auc']}")
+    print(f" Holdout ROC-AUC:    {metadata['failure_metrics']['roc_auc']}")
+    print(f" Holdout Recall:     {metadata['failure_metrics']['recall']}")
+    print(f" Holdout Precision:  {metadata['failure_metrics']['precision']}")
     print(
-        f" Runtime MAE:     {metadata['runtime_metrics']['mae']}s (R² = {metadata['runtime_metrics']['r2_score']})"
+        f" Holdout Runtime MAE: {metadata['runtime_metrics']['mae']}s (R² = {metadata['runtime_metrics']['r2_score']})"
     )
     print("=" * 70)
 

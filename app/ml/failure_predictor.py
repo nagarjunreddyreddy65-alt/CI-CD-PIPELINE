@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 
@@ -39,17 +39,25 @@ class FailurePredictor:
         random_state: int = 42,
         risk_threshold: float = 0.35,
         feature_names: list[str] | None = None,
+        classifier_type: str = "RandomForestClassifier",
     ):
         self.model_version = model_version
         self.risk_threshold = risk_threshold
         self.feature_names = feature_names
-        self.model = RandomForestClassifier(
-            n_estimators=n_estimators,
-            class_weight="balanced",
-            max_depth=6,
-            min_samples_split=4,
-            random_state=random_state,
-        )
+        self.classifier_type = classifier_type
+        if classifier_type == "GradientBoostingClassifier":
+            self.model = GradientBoostingClassifier(
+                n_estimators=n_estimators,
+                random_state=random_state,
+            )
+        else:
+            self.model = RandomForestClassifier(
+                n_estimators=n_estimators,
+                class_weight="balanced",
+                max_depth=6,
+                min_samples_split=4,
+                random_state=random_state,
+            )
         self.is_trained = False
 
     def train(self, X: np.ndarray, y: np.ndarray, time_aware: bool = True) -> dict[str, Any]:
@@ -177,21 +185,35 @@ class FailurePredictor:
 
         if isinstance(features, np.ndarray):
             arr = features.flatten()
-            hist_rate = float(arr[4]) if len(arr) > 4 else (float(arr[8]) if len(arr) > 8 else 0.05)
-            is_sens = int(arr[7]) if len(arr) > 7 else (int(arr[6]) if len(arr) > 6 else 0)
+            if len(arr) != 10:
+                raise ValueError(
+                    f"Invalid feature vector length: expected 10 features, got {len(arr)}"
+                )
+            is_travistorrent = (
+                getattr(self, "feature_names", None) is not None
+                and "build_number" in self.feature_names
+            )
+            hist_rate = (
+                float(arr[4]) if is_travistorrent else (float(arr[8]) if len(arr) > 8 else 0.05)
+            )
+            is_sens = int(arr[6]) if len(arr) > 6 else 0
             X_input = arr.reshape(1, -1)
-        elif (
-            hasattr(features, "to_travistorrent_array")
-            and getattr(self, "feature_names", None) is not None
-            and "build_number" in self.feature_names
-        ):
-            hist_rate = getattr(features, "historical_failure_rate", 0.05)
-            is_sens = getattr(features, "is_sensitive_change", 0)
-            X_input = features.to_travistorrent_array()
-        else:
+        elif hasattr(features, "to_array"):
+            # Live Git commit features
+            if (
+                getattr(self, "feature_names", None) is not None
+                and "build_number" in self.feature_names
+            ):
+                raise ValueError(
+                    "Unsupported inference: active model was trained on historical Travis CI benchmark "
+                    "schema ('build_number', etc.) and cannot perform live Git commit inference. "
+                    "Feature semantics are not interchangeable. Train a live telemetry model on genuine repository metrics."
+                )
             hist_rate = getattr(features, "historical_failure_rate", 0.05)
             is_sens = getattr(features, "is_sensitive_change", 0)
             X_input = features.to_array()
+        else:
+            raise ValueError(f"Unsupported feature input type: {type(features).__name__}")
 
         if not self.is_trained:
             # Fallback baseline prediction when model is not yet trained

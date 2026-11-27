@@ -19,6 +19,7 @@ import numpy as np
 from app.core.config import settings
 from app.core.logging import logger
 from app.ml.failure_predictor import FailurePredictor
+from app.ml.feature_extractor import FeatureExtractor
 from app.ml.runtime_predictor import RuntimePredictor
 
 
@@ -778,6 +779,10 @@ class ModelManager:
             raise ValueError("Corrupted database records: duplicate pipeline run IDs detected.")
 
         telemetry_dataset = self.extract_features_from_db_runs(completed_runs)
+        self.failure_predictor = FailurePredictor(
+            classifier_type="GradientBoostingClassifier",
+            feature_names=FeatureExtractor.FEATURE_NAMES,
+        )
         return self.train_and_persist(
             n_samples=len(telemetry_dataset),
             data_source="GENUINE_PIPELINE_TELEMETRY",

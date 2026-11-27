@@ -108,18 +108,32 @@ class RuntimePredictor:
 
         if isinstance(features, np.ndarray):
             arr = features.flatten()
-            prev_dur = float(arr[3]) if len(arr) > 3 else (float(arr[9]) if len(arr) > 9 else 30.0)
+            if len(arr) != 10:
+                raise ValueError(
+                    f"Invalid feature vector length: expected 10 features, got {len(arr)}"
+                )
+            is_travistorrent = (
+                getattr(self, "feature_names", None) is not None
+                and "build_number" in self.feature_names
+            )
+            prev_dur = (
+                float(arr[3]) if is_travistorrent else (float(arr[9]) if len(arr) > 9 else 30.0)
+            )
             X_input = arr.reshape(1, -1)
-        elif (
-            hasattr(features, "to_travistorrent_array")
-            and getattr(self, "feature_names", None) is not None
-            and "build_number" in self.feature_names
-        ):
-            prev_dur = getattr(features, "previous_execution_duration", 30.0)
-            X_input = features.to_travistorrent_array()
-        else:
+        elif hasattr(features, "to_array"):
+            if (
+                getattr(self, "feature_names", None) is not None
+                and "build_number" in self.feature_names
+            ):
+                raise ValueError(
+                    "Unsupported inference: active model was trained on historical Travis CI benchmark "
+                    "schema ('build_number', etc.) and cannot perform live Git commit inference. "
+                    "Feature semantics are not interchangeable. Train a live telemetry model on genuine repository metrics."
+                )
             prev_dur = getattr(features, "previous_execution_duration", 30.0)
             X_input = features.to_array()
+        else:
+            raise ValueError(f"Unsupported feature input type: {type(features).__name__}")
 
         if not self.is_trained:
             # Fallback baseline: scale duration based on selected tests count

@@ -219,6 +219,8 @@ class DecisionEngine:
 
         # If model artifacts are missing, corrupt, synthetic, or uncertified, flag Rule 14
         model_artifacts_exist = base_artifacts_exist and not model_missing_or_invalid
+        model_ver_ok = True
+        model_ver_reason = ""
 
         # Step 4 & 5: Feature Extraction & ML Predictions (guaranteed pre-execution only)
         if can_pred and effective_failure_rate is not None and effective_prev_duration is not None:
@@ -233,14 +235,30 @@ class DecisionEngine:
                 historical_failure_rate=effective_failure_rate,
                 previous_execution_duration=effective_prev_duration,
             )
-            fail_res = self.model_manager.failure_predictor.predict(features)
-            fail_prob = fail_res.predicted_failure_probability
-            fail_class = fail_res.predicted_failure_class
-            confidence = fail_res.confidence
+            try:
+                fail_res = self.model_manager.failure_predictor.predict(features)
+                fail_prob = fail_res.predicted_failure_probability
+                fail_class = fail_res.predicted_failure_class
+                confidence = fail_res.confidence
 
-            runtime_res = self.model_manager.runtime_predictor.predict(features)
-            pred_duration = runtime_res.predicted_duration_sec
-            features_dict = features.to_dict()
+                runtime_res = self.model_manager.runtime_predictor.predict(features)
+                pred_duration = runtime_res.predicted_duration_sec
+                features_dict = features.to_dict()
+            except (ValueError, NotImplementedError) as e:
+                logger.warning(
+                    f"ML inference unsupported or rejected: {e}. Enforcing Safety Rule 15 fallback."
+                )
+                fail_prob = 1.0
+                fail_class = 1
+                confidence = 0.50
+                pred_duration = 0.0
+                features_dict = features.to_dict()
+                model_missing_or_invalid = True
+                model_artifacts_exist = False
+                model_ver_ok = False
+                model_ver_reason = f"Safety Rule 15: {e}"
+                can_pred = False
+                can_pred_reason = f"Safety Rule 15: {e}"
         else:
             # Fallback path: do not invoke ML on invented inputs
             fail_prob = 0.0
@@ -270,7 +288,14 @@ class DecisionEngine:
             len(selected_candidate_tests) == 0 and change_res.total_changed_files > 0
         )
 
-        model_ver_ok, model_ver_reason = self.model_manager.is_version_compatible()
+        base_ver_ok, base_ver_reason = self.model_manager.is_version_compatible()
+        if "Safety Rule 15" in (can_pred_reason if not can_pred else ""):
+            model_ver_ok = False
+            model_ver_reason = can_pred_reason
+        else:
+            model_ver_ok = base_ver_ok and model_ver_ok
+            if not base_ver_ok:
+                model_ver_reason = base_ver_reason
 
         fallback_custom_reason = (
             mapping_res.fallback_reason

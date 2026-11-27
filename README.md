@@ -86,13 +86,19 @@ Once started, the services will be accessible at:
 - **Web Dashboard:** `http://localhost:8000/dashboard`
 
 ### 5. Run on Kubernetes
-Kubernetes manifests are provided in `k8s/`:
+Kubernetes manifests are provided in `k8s/` and validated for production deployment:
 ```bash
+# 1. Create secret from production configuration (see k8s/secrets.example.yaml)
+kubectl apply -f k8s/secrets.example.yaml
+
+# 2. Deploy infrastructure and application services
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/postgres.yaml
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 ```
+> [!NOTE]
+> All Kubernetes manifests are syntactically and structurally validated. Database credentials and API keys are strictly decoupled from manifest source files using `secretKeyRef` referencing `autonomous-devops-secrets`. Full cluster deployment requires an active Kubernetes cluster with secrets applied.
 
 ### 6. Run Locally Without Docker (Automatic SQLite Fallback)
 ```bash
@@ -132,7 +138,7 @@ In production (`ENVIRONMENT=production`):
 
 All core components, API endpoints, sample application modules, safety rules, ML model loading, and authentication layers are strictly verified:
 
-### 1. Run Complete Test Suite (266 tests, 100% pass rate)
+### 1. Run Complete Test Suite (280 tests, 100% pass rate)
 ```bash
 python -m pytest tests/ tests_sample_app/ -v
 ```

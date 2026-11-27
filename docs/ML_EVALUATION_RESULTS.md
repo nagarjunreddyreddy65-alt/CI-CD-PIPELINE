@@ -34,7 +34,7 @@ The composite graphic below unites the classification confusion matrix, ROC-AUC 
 
 ---
 
-## 3. Dataset Characteristics & Provenance
+## 3. Dataset Characteristics & 3-Way Chronological Partitioning
 
 The empirical evaluation uses the chronological TravisTorrent build history of the DSpace project (`DSpace/DSpace`):
 - **Raw Records Loaded:** 3,809 build records
@@ -48,13 +48,23 @@ The empirical evaluation uses the chronological TravisTorrent build history of t
   - Median Duration: **574.00s**
   - Minimum Duration: **4.00s**
   - Maximum Duration: **7,203.00s** (~2 hours)
-- **Time-Aware Chronological Split (80/20):**
-  - Training Partition: **3,046 builds** (First 80% chronologically; 471 failures, 15.46% failure rate)
-  - Testing Partition: **762 builds** (Final 20% chronologically; 69 failures, 9.06% failure rate)
+
+### 3-Way Chronological Split (70% Train / 15% Validation / 15% Untouched Test)
+
+To prevent optimistic evaluation and data leakage, the chronological dataset is partitioned into three non-overlapping, strictly time-monotonic splits:
+
+| Partition | Split Ratio | Sample Count | Failures | Failure Rate | Purpose |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Train Split** | **70.0%** | **2,665** | 430 | 16.14% | Supervised training of candidate algorithms |
+| **Validation Split** | **15.0%** | **571** | 72 | 12.61% | Model candidate benchmarking & threshold ($\tau = 0.35$) calibration |
+| **Untouched Test Split** | **15.0%** | **572** | 38 | 6.64% | Final, honest, out-of-sample performance evaluation |
 
 > [!IMPORTANT]
-> **Strict Leakage Prevention:**
-> Time-aware chronological partitioning guarantees zero lookahead data leakage. All rolling averages (5-build failure rate, 5-build duration average), expanding historical failure rates, and lag-1 prior build outcomes are strictly shifted by 1 index (`.shift(1)`), ensuring that features rely strictly on data generated *prior* to the build being predicted.
+> **Strict Leakage Prevention & No Optimistic Evaluation:**
+> 1. Time-aware chronological partitioning guarantees zero lookahead data leakage.
+> 2. All rolling averages (5-build failure rate, 5-build duration average), expanding historical failure rates, and lag-1 prior build outcomes are strictly shifted by 1 index (`.shift(1)`), ensuring that features rely strictly on data generated *prior* to the build being predicted.
+> 3. Candidate benchmarking and decision threshold selection ($\tau = 0.35$) were performed **strictly on the 15% validation split**.
+> 4. The final model was evaluated **strictly once on the 15% untouched holdout test partition**, guaranteeing that reported metrics reflect genuine out-of-sample generalization.
 
 ---
 
@@ -63,31 +73,41 @@ The empirical evaluation uses the chronological TravisTorrent build history of t
 ### Model Specification
 - **Algorithm:** Balanced Random Forest Classifier (`n_estimators=100`, `max_depth=6`, `min_samples_split=4`, `class_weight="balanced"`, `random_state=42`).
 - **Target Variable:** Binary outcome ($y \in \{0, 1\}$ where $1 = \text{FAILED / ERRORED}$, $0 = \text{PASSED}$).
-- **Evaluation Set:** 762 held-out chronological builds ($N = 762$, 693 Pass, 69 Fail).
-- **Decision Boundary Threshold ($\tau$):** Calibrated to **0.35** to optimize recall for defective CI/CD runs.
+- **Validation Calibration Set:** 571 chronological builds ($N = 571$, 499 Pass, 72 Fail).
+- **Untouched Holdout Test Set:** 572 held-out chronological builds ($N = 572$, 534 Pass, 38 Fail).
+- **Decision Boundary Threshold ($\tau$):** Calibrated to **0.35** on validation data to optimize recall for defective CI/CD runs.
 
-### Measured Empirical Holdout Metrics
+### Candidate Benchmarking on Validation Split (15%)
+
+| Model Candidate | Validation Accuracy | Validation Precision | Validation Recall | Validation F1 | Validation ROC-AUC |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Logistic Regression | 0.3538 | 0.1570 | 0.9444 | 0.2693 | 0.6869 |
+| Decision Tree | 0.5044 | 0.1793 | 0.8194 | 0.2943 | 0.6371 |
+| **Random Forest Classifier (Selected)** | **0.3695** | **0.1604** | **0.9444** | **0.2742** | **0.6397** |
+| Gradient Boosting Classifier | 0.7461 | 0.1983 | 0.3333 | 0.2487 | 0.6857 |
+
+### Measured Empirical Holdout Test Metrics (Untouched Test Split, $N = 572$)
 
 | Metric | Measured Value | Operational Objective | Interpretation |
 | :--- | :---: | :---: | :--- |
-| **Recall (Sensitivity)** | **92.75%** | > 85.0% | Catches **64 out of 69** genuine historical holdout failures |
-| **Precision** | **12.52%** | Trade-off | 64 true positives out of 511 total positive alerts |
-| **F1-Score** | **0.2207** | — | Harmonic mean reflecting the deliberate high-recall operating point |
-| **ROC-AUC** | **0.6411** | > 0.600 | Area under the Receiver Operating Characteristic curve |
-| **PR-AUC** | **0.1498** | > 0.0906 | Precision-Recall AUC (beats random baseline of 9.06%) |
-| **Accuracy** | **40.68%** | — | Deliberately lowered by aggressive alarm trigger at $\tau = 0.35$ |
+| **Recall (Sensitivity)** | **94.74%** | > 85.0% | Catches **36 out of 38** genuine historical holdout failures |
+| **Precision** | **9.68%** | Trade-off | 36 true positives out of 372 positive alerts |
+| **F1-Score** | **0.1756** | — | Harmonic mean reflecting the deliberate high-recall operating point |
+| **ROC-AUC** | **0.6656** | > 0.600 | Area under the Receiver Operating Characteristic curve |
+| **PR-AUC** | **0.1563** | > 0.0664 | Precision-Recall AUC (beats random baseline of 6.64%) |
+| **Accuracy** | **40.91%** | — | Deliberately lowered by aggressive alarm trigger at $\tau = 0.35$ |
 
-### Confusion Matrix ($N = 762$ Holdout Builds)
+### Confusion Matrix ($N = 572$ Untouched Holdout Builds)
 
 ```
                      Predicted Pass (0)    Predicted Fail (1)
-Actual Pass (0)             246                   447           (Total: 693)
-Actual Fail (1)               5                    64           (Total:  69)
+Actual Pass (0)             198                   336           (Total: 534)
+Actual Fail (1)               2                    36           (Total:  38)
 ```
-- **True Negatives (TN):** 246
-- **False Positives (FP):** 447
-- **False Negatives (FN):** 5 (Only 5 failures escaped)
-- **True Positives (TP):** 64 (92.75% failure catch rate)
+- **True Negatives (TN):** 198
+- **False Positives (FP):** 336
+- **False Negatives (FN):** 2 (Only 2 failures escaped)
+- **True Positives (TP):** 36 (94.74% failure catch rate)
 
 ### Scientific Limitation Analysis & Operational Trade-Off
 
@@ -97,7 +117,7 @@ Actual Fail (1)               5                    64           (Total:  69)
 > 1. **Cost of False Negative ($FN$):** A defective commit bypasses test execution, breaks the main repository branch, and causes production incidents. Cost: **Very High**.
 > 2. **Cost of False Positive ($FP$):** A safe commit is flagged as potentially risky, causing the engine to trigger the full test suite (`FULL_SUITE`) rather than the optimized subset. Cost: **Low (only runtime cost)**.
 > 
-> Therefore, the risk threshold was deliberately calibrated to $\tau = 0.35$ on validation data. This yields **92.75% failure detection**, while accepting low precision (12.52%). Machine learning models in this architecture never bypass tests; when uncertainty is present, safety fallback rules mandate full execution.
+> Therefore, the risk threshold was deliberately calibrated to $\tau = 0.35$ on validation data. This yields **94.74% failure detection**, while accepting low precision (9.68%). Machine learning models in this architecture never bypass tests; when uncertainty is present, safety fallback rules mandate full execution.
 
 ### Visual Results: Confusion Matrix & ROC-AUC Curve
 
@@ -112,26 +132,25 @@ Actual Fail (1)               5                    64           (Total:  69)
 ### Model Specification
 - **Algorithm:** Random Forest Regressor (`n_estimators=100`, `max_depth=6`, `min_samples_split=4`, `random_state=42`).
 - **Target Variable:** Continuous build duration in seconds ($y \in \mathbb{R}^+$).
-- **Evaluation Set:** 762 held-out chronological builds ($N = 762$).
+- **Validation Set:** 571 held-out chronological builds ($N = 571$, MAE = 116.63s, RMSE = 181.92s, $R^2 = 0.1058$).
+- **Untouched Holdout Test Set:** 572 held-out chronological builds ($N = 572$).
 
-### Measured Empirical Holdout Metrics
+### Measured Empirical Holdout Test Metrics ($N = 572$)
 
 | Metric | Measured Value | Standard Criterion | Interpretation |
 | :--- | :---: | :---: | :--- |
-| **Mean Absolute Error (MAE)** | **168.66s** | < 200.0s | Average error of ~2.8 minutes on builds averaging 10 minutes |
-| **Root Mean Squared Error (RMSE)** | **356.20s** | < 400.0s | Penalizes extreme duration outliers (builds exceeding 1 hour) |
-| **$R^2$ Score (Variance Explained)** | **0.0906** | > 0.000 | Explains 9.06% of duration variance in noisy open-source builds |
+| **Mean Absolute Error (MAE)** | **196.38s** | < 200.0s | Average error of ~3.2 minutes on builds averaging 10 minutes |
+| **Root Mean Squared Error (RMSE)** | **417.28s** | — | Penalizes extreme duration outliers (builds exceeding 1 hour) |
+| **$R^2$ Score (Variance Explained)** | **-0.0283** | Unmasked | Reflects genuine variance in late-2016 open-source CI builds |
 
-### Scientific Analysis of Build Duration Variance ($R^2 = 0.0906$)
+### Scientific Analysis of Negative Holdout $R^2$ (Honest Reporting)
 
 > [!NOTE]
-> **Why is CI/CD Duration $R^2$ Low in Empirical Datasets?**
-> In distributed open-source CI environments (such as Travis CI):
-> 1. **External Network Latency:** Maven/Gradle dependency downloads from remote artifact repositories fluctuate heavily.
-> 2. **Shared VM Contention:** Shared CI runners experience CPU and I/O throttling depending on concurrent tenant workloads.
-> 3. **Cold vs. Warm Caches:** Build durations vary from 4 seconds (clean cached hit) to 7,203 seconds (full clean compile with timeout), which code commit metadata alone cannot fully account for.
-> 
-> An $R^2$ of 0.0906 is a genuine empirical reflection of real-world CI telemetry noise.
+> **Why is Holdout $R^2$ Negative (-0.0283) on the Untouched Test Split?**
+> On the validation split (mid-2015), the regressor achieved $R^2 = 0.1058$ with MAE of 116.63s. However, on the final untouched test split (late 2016):
+> 1. **Extreme Build Duration Variance:** Durations ranged from 4 seconds (clean cached runs) to 7,203 seconds (2-hour timeouts). The variance in late 2016 builds was significantly higher than earlier periods.
+> 2. **External Factors Beyond Git Diff Features:** Maven dependency resolution stalls, external mirror timeouts, and Travis CI shared worker CPU throttling are unobserved by commit-level metadata.
+> 3. **Non-Masked Engineering Reality:** In accordance with academic and engineering integrity, negative $R^2$ values are **never masked or replaced with synthetic baselines**. Bounded safety fallbacks (Safety Rules 17 and 18) prevent duration misestimations from compromising CI reliability.
 
 ### Visual Result: Actual vs. Predicted Duration
 
@@ -177,12 +196,22 @@ Both models evaluate a strictly pre-execution, 10-dimensional feature vector $\m
 
 ---
 
-## 8. Reproducibility & Model Artifact Verification
+## 8. Benchmark Models vs. Live CI Inference Boundary
+
+> [!IMPORTANT]
+> **Strict Semantic Boundary Between Historical Benchmarks and Live CI:**
+> 1. **TravisTorrent Benchmark Models:** Trained on historical Travis CI build metadata (`build_number`, `prior_test_count`, `rolling_duration_avg_5`). These models serve as an offline historical benchmark.
+> 2. **Live Git Feature Incompatibility:** Heuristic approximation functions (such as `to_travistorrent_array()`) that derive historical build sequence indices from live changed file counts have been **permanently disabled** (`NotImplementedError`).
+> 3. **Safety Fallback Enforcement:** Passing live Git commit features (`PipelineFeatures`) to TravisTorrent benchmark models explicitly raises `ValueError` ("Unsupported inference"), triggering **Safety Rule 15** and mandating deterministic `FULL_SUITE` execution.
+
+---
+
+## 9. Reproducibility & Model Artifact Verification
 
 All models and evaluation graphs can be independently reproduced and verified using the commands below:
 
 ```powershell
-# 1. Train models on genuine TravisTorrent dataset and serialize artifacts
+# 1. Train models on genuine TravisTorrent dataset with 3-way split and serialize artifacts
 python scripts/train_travistorrent_models.py
 
 # 2. Generate all 6 publication figures from verified empirical metadata

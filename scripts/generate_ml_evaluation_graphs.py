@@ -150,14 +150,15 @@ def plot_roc_curve(metadata):
 
     fig, ax = plt.subplots(figsize=(6.0, 5.0))
 
-    if roc_data and "fpr" in roc_data and "tpr" in roc_data:
-        fpr = np.array(roc_data["fpr"])
-        tpr = np.array(roc_data["tpr"])
-        curve_label = f"Random Forest (Empirical Holdout AUC = {auc:.4f})"
-    else:
-        fpr = np.array([0.0, 0.05, 0.15, 0.45, 0.65, 1.0])
-        tpr = np.array([0.0, 0.25, 0.55, 0.85, 0.93, 1.0])
-        curve_label = f"Random Forest (AUC = {auc:.4f})"
+    if not (roc_data and "fpr" in roc_data and "tpr" in roc_data):
+        raise RuntimeError(
+            "Empirical ROC holdout curve data missing from model_metadata.json. "
+            "Refusing to generate graphic with illustrative fallback."
+        )
+
+    fpr = np.array(roc_data["fpr"])
+    tpr = np.array(roc_data["tpr"])
+    curve_label = f"Random Forest (Empirical Holdout AUC = {auc:.4f})"
 
     ax.plot(fpr, tpr, color=PRIMARY_COLOR, lw=2.5, label=curve_label)
     ax.plot(
@@ -302,12 +303,14 @@ def plot_actual_vs_predicted(metadata):
     emp = metadata.get("empirical_eval_data", {})
     act_pred = emp.get("actual_vs_predicted", {})
 
-    if act_pred and "y_actual" in act_pred and "y_predicted" in act_pred:
-        y_actual = np.array(act_pred["y_actual"])
-        y_pred = np.array(act_pred["y_predicted"])
-    else:
-        y_actual = np.array([120, 250, 450, 580, 720, 950, 1100, 1400, 1800, 2400])
-        y_pred = y_actual + np.array([25, -40, 50, -35, 60, -70, 85, -90, 110, -120])
+    if not (act_pred and "y_actual" in act_pred and "y_predicted" in act_pred):
+        raise RuntimeError(
+            "Empirical runtime actual-vs-predicted regression data missing from model_metadata.json. "
+            "Refusing to generate graphic with illustrative fallback."
+        )
+
+    y_actual = np.array(act_pred["y_actual"])
+    y_pred = np.array(act_pred["y_predicted"])
 
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
@@ -381,15 +384,21 @@ def plot_actual_vs_predicted(metadata):
 
 def fetch_travis_durations() -> np.ndarray:
     """Loads genuine CI build durations from the TravisTorrent dataset."""
-    if TRAVISTORRENT_CSV.exists():
-        try:
-            df = pd.read_csv(TRAVISTORRENT_CSV, usecols=["repo_duration"])
-            durs = pd.to_numeric(df["repo_duration"], errors="coerce").dropna().values
-            if len(durs) > 0:
-                return durs
-        except (OSError, ValueError, KeyError) as e:
-            print(f"Notice loading CSV durations: {e}")
-    return np.array([450, 520, 580, 610, 720, 850, 1200, 2400])
+    if not TRAVISTORRENT_CSV.exists():
+        raise RuntimeError(
+            f"Empirical TravisTorrent dataset not found at {TRAVISTORRENT_CSV}. "
+            "Cannot generate authentic Z-score anomaly distribution."
+        )
+    try:
+        df = pd.read_csv(TRAVISTORRENT_CSV, usecols=["repo_duration"])
+        durs = pd.to_numeric(df["repo_duration"], errors="coerce").dropna().values
+        if len(durs) == 0:
+            raise RuntimeError(f"No valid durations found in {TRAVISTORRENT_CSV}.")
+        return durs
+    except (OSError, ValueError, KeyError) as e:
+        raise RuntimeError(
+            f"Failed to load empirical durations from {TRAVISTORRENT_CSV}: {e}"
+        ) from e
 
 
 def plot_zscore_distribution():
@@ -546,12 +555,13 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
     auc = metadata["failure_metrics"]["roc_auc"]
     emp = metadata.get("empirical_eval_data", {})
     roc_data = emp.get("roc_curve", {})
-    if roc_data and "fpr" in roc_data and "tpr" in roc_data:
-        fpr = np.array(roc_data["fpr"])
-        tpr = np.array(roc_data["tpr"])
-    else:
-        fpr = np.array([0.0, 0.2, 0.45, 0.65, 1.0])
-        tpr = np.array([0.0, 0.4, 0.75, 0.93, 1.0])
+    if not (roc_data and "fpr" in roc_data and "tpr" in roc_data):
+        raise RuntimeError(
+            "Empirical ROC holdout curve data missing for Master Panel. Refusing illustrative fallback."
+        )
+
+    fpr = np.array(roc_data["fpr"])
+    tpr = np.array(roc_data["tpr"])
 
     ax2.plot(fpr, tpr, color=PRIMARY_COLOR, lw=2.2, label=f"RF Classifier (AUC={auc:.4f})")
     ax2.plot([0, 1], [0, 1], color="#94a3b8", lw=1.2, linestyle="--", label="Random Chance (0.50)")
@@ -567,12 +577,13 @@ def plot_master_evaluation_panel(metadata, feature_names, fp_importances, rp_imp
     # Panel 3: Actual vs Predicted Runtime
     ax3 = fig.add_subplot(gs[0, 2])
     act_pred = emp.get("actual_vs_predicted", {})
-    if act_pred and "y_actual" in act_pred and "y_predicted" in act_pred:
-        y_act = np.array(act_pred["y_actual"])
-        y_pr = np.array(act_pred["y_predicted"])
-    else:
-        y_act = np.array([100, 300, 600, 900, 1200])
-        y_pr = y_act + 20
+    if not (act_pred and "y_actual" in act_pred and "y_predicted" in act_pred):
+        raise RuntimeError(
+            "Empirical runtime regression data missing for Master Panel. Refusing illustrative fallback."
+        )
+
+    y_act = np.array(act_pred["y_actual"])
+    y_pr = np.array(act_pred["y_predicted"])
 
     max_p = max(float(np.max(y_act)), float(np.max(y_pr))) * 1.05
     ax3.scatter(y_act, y_pr, color=PURPLE_COLOR, s=40, alpha=0.75, edgecolors="#4c1d95", zorder=4)
