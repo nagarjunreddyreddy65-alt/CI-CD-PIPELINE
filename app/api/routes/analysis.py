@@ -34,27 +34,19 @@ class DiffAnalysisRequest(BaseModel):
     )
 
 
-@router.post(
-    "/diff",
-    summary="Analyze Code Diff and Map Dependencies",
-    description="Processes file changes, checks deterministic safety rules, and maps affected tests.",
-)
-def analyze_diff(
-    payload: DiffAnalysisRequest,
-    _authorized: bool = Depends(verify_runner_token),
-):
-    """Analyzes commit diff and maps downstream test dependencies."""
-    repo_input = payload.repository_path or "."
-    clean_repo = os.path.normpath(repo_input).replace("\\", "/")
+def _validate_repo_path(repo_input: str | None) -> str:
+    """Validates and resolves repository root path, strictly forbidding path traversal."""
+    path_val = repo_input or "."
+    clean_repo = os.path.normpath(path_val).replace("\\", "/")
     if (
-        os.path.isabs(repo_input)
+        os.path.isabs(path_val)
         or clean_repo.startswith(("../", "..", "//", "\\\\"))
         or "/../" in clean_repo
         or bool(len(clean_repo) > 1 and clean_repo[1] == ":")
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid repository path: path traversal or absolute/drive/UNC path is forbidden ('{payload.repository_path}')",
+            detail=f"Invalid repository path: path traversal or absolute/drive/UNC path is forbidden ('{path_val}')",
         )
 
     approved_root = os.path.abspath(os.getcwd())
@@ -69,8 +61,20 @@ def analyze_diff(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid repository path: path escapes approved workspace boundary",
         )
+    return real_candidate
 
-    root_dir = real_candidate
+
+@router.post(
+    "/diff",
+    summary="Analyze Code Diff and Map Dependencies",
+    description="Processes file changes, checks deterministic safety rules, and maps affected tests.",
+)
+def analyze_diff(
+    payload: DiffAnalysisRequest,
+    _authorized: bool = Depends(verify_runner_token),
+):
+    """Analyzes commit diff and maps downstream test dependencies."""
+    root_dir = _validate_repo_path(payload.repository_path)
 
     # Reject path traversal attempts in file paths
     for f in payload.files:
@@ -118,9 +122,12 @@ def analyze_diff(
     summary="Get Dependency Graph Statistics",
     description="Returns current dependency graph node count, edge count, and density.",
 )
-def get_graph_summary():
+def get_graph_summary(
+    repository_path: str = ".",
+):
     """Builds current AST dependency graph and returns topology statistics."""
-    analyzer = ASTDependencyAnalyzer(os.getcwd())
+    target_dir = _validate_repo_path(repository_path)
+    analyzer = ASTDependencyAnalyzer(target_dir)
     graph = analyzer.build_graph()
 
     return {

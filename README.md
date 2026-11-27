@@ -85,7 +85,16 @@ Once started, the services will be accessible at:
 - **PostgreSQL Database:** `localhost:5432` (`autonomous_devops_db`)
 - **Web Dashboard:** `http://localhost:8000/dashboard`
 
-### 5. Run Locally Without Docker (Automatic SQLite Fallback)
+### 5. Run on Kubernetes
+Kubernetes manifests are provided in `k8s/`:
+```bash
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/postgres.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+```
+
+### 6. Run Locally Without Docker (Automatic SQLite Fallback)
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -123,7 +132,7 @@ In production (`ENVIRONMENT=production`):
 
 All core components, API endpoints, sample application modules, safety rules, ML model loading, and authentication layers are strictly verified:
 
-### 1. Run Complete Test Suite (236 tests, 100% pass rate)
+### 1. Run Complete Test Suite (266 tests, 100% pass rate)
 ```bash
 python -m pytest tests/ tests_sample_app/ -v
 ```
@@ -148,7 +157,13 @@ python scripts/benchmark_e2e.py
 ```
 *(Executes 15 benchmark scenarios, controlled defect injection, dynamically calculates safety compliance, and exports `data/e2e_benchmark_report.json`)*
 
-### 5. Reproduce Empirical ML Evaluation Figures
+### 5. Train Machine Learning Models on Genuine TravisTorrent Dataset
+```bash
+python scripts/train_travistorrent_models.py
+```
+*(Trains Balanced Random Forest Classifier and Regressor on 3,808 genuine builds from TravisTorrent DSpace repository; produces serialized models and updates `model_metadata.json`)*
+
+### 6. Reproduce Empirical ML Evaluation Figures
 ```bash
 python scripts/generate_ml_evaluation_graphs.py
 ```
@@ -158,6 +173,7 @@ python scripts/generate_ml_evaluation_graphs.py
 
 ## 📚 Project Documentation
 
+- [TravisTorrent ML Integration & Audit Report](TRAVISTORRENT_ML_INTEGRATION_REPORT.md) — Comprehensive dataset provenance, holdout metrics, model limitations, and verification.
 - [System Architecture](docs/ARCHITECTURE.md) — 5-tier architecture, security boundaries, and data flows.
 - [Project Plan & Roadmap](docs/PROJECT_PLAN.md) — Complete milestone records and deliverables.
 - [Deterministic Safety Policy (21 Rules)](docs/SAFETY_POLICY.md) — Exhaustive specification of all 21 fallback conditions.

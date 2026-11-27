@@ -208,7 +208,7 @@ class ExecutionPlan(Base):
     total_tests_count = Column(Integer, default=0, nullable=False)
     tests_reduction_pct = Column(Float, default=0.0, nullable=False)
     selected_tests_json = Column(Text, nullable=False)  # JSON serialized list of test identifiers
-    safety_rule_triggered = Column(String(100), nullable=True)
+    safety_rule_triggered = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     pipeline_run = relationship("PipelineRun", back_populates="execution_plan")

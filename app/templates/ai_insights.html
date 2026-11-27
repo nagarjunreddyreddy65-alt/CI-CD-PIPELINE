@@ -13,10 +13,11 @@
     <line x1="12" y1="8" x2="12.01" y2="8"></line>
   </svg>
   <div class="academic-banner-content">
-    <strong>Academic Methodology & Provenance Architecture:</strong>
-    Supervised Scikit-Learn models (Random Forest Classifier & Regressor) estimate commit risk profiles from AST-extracted features.
-    All training datasets are cryptographically bound via <code class="code-inline">VerifiedTelemetryDataset</code> (SHA-256 HMAC integrity seals) to guarantee tamper-evident database provenance.
-    Under the <em>Deterministic Safety Policy</em>, ML models predict probability; deterministic safety rules decide execution.
+    <strong>Academic Methodology & Genuine TravisTorrent Dataset Provenance:</strong>
+    Supervised Scikit-Learn models (Random Forest Classifier & Regressor) trained on genuine historical CI build records from the <em>TravisTorrent</em> dataset (DSpace Java repository, 3,808 chronological builds).
+    Evaluated strictly on a held-out chronological 20% test split (N=762 builds) without temporal lookahead leakage.
+    Achieved <strong>92.8% failure detection recall</strong>, <strong>0.6411 ROC-AUC</strong>, and <strong>168.66s MAE (R² = 0.0906)</strong>.
+    Under the <em>Deterministic Safety Policy</em>, AI predicts risk probability; 21 deterministic safety rules govern CI/CD test execution.
   </div>
 </div>
 
@@ -28,18 +29,21 @@
       <span class="kpi-title">Failure Risk Classifier</span>
       <span class="badge badge-info">Random Forest</span>
     </div>
-    <div class="kpi-value" style="font-size: 1.5rem;">
-      {% if models.failure_predictor.is_trained %}
-        <span style="color: var(--accent-success-text); display: inline-flex; align-items: center; gap: 6px;">
-          <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-success);"></span>
-          Verified Model Loaded
-        </span>
-      {% else %}
-        <span style="color: var(--accent-warning-text); display: inline-flex; align-items: center; gap: 6px;">
-          <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-warning);"></span>
-          Untrained (Baseline)
-        </span>
-      {% endif %}
+    <div class="kpi-value-row">
+      <div class="kpi-value" style="font-size: 1.45rem;">
+        {% if models.failure_predictor.is_trained %}
+          <span style="color: var(--accent-success-text); display: inline-flex; align-items: center; gap: 8px;">
+            <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-success);"></span>
+            Verified Model Loaded
+          </span>
+        {% else %}
+          <span style="color: var(--accent-warning-text); display: inline-flex; align-items: center; gap: 8px;">
+            <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-warning);"></span>
+            Untrained (Baseline)
+          </span>
+        {% endif %}
+      </div>
+      <canvas class="kpi-sparkline" data-sparkline="cyan" width="90" height="34"></canvas>
     </div>
     <div class="kpi-trend">
       <span>Version: <strong class="code-inline">{{ models.failure_predictor.version }}</strong></span> &bull; 
@@ -54,18 +58,21 @@
       <span class="kpi-title">Runtime Regressor</span>
       <span class="badge badge-purple">Random Forest</span>
     </div>
-    <div class="kpi-value" style="font-size: 1.5rem;">
-      {% if models.runtime_predictor.is_trained %}
-        <span style="color: var(--accent-success-text); display: inline-flex; align-items: center; gap: 6px;">
-          <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-success);"></span>
-          Trained & Active
-        </span>
-      {% else %}
-        <span style="color: var(--accent-warning-text); display: inline-flex; align-items: center; gap: 6px;">
-          <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-warning);"></span>
-          Untrained (Baseline)
-        </span>
-      {% endif %}
+    <div class="kpi-value-row">
+      <div class="kpi-value" style="font-size: 1.45rem;">
+        {% if models.runtime_predictor.is_trained %}
+          <span style="color: var(--accent-purple); display: inline-flex; align-items: center; gap: 8px;">
+            <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-purple);"></span>
+            Trained & Active
+          </span>
+        {% else %}
+          <span style="color: var(--accent-warning-text); display: inline-flex; align-items: center; gap: 8px;">
+            <span class="pulse-dot" style="width: 8px; height: 8px; background: var(--accent-warning);"></span>
+            Untrained (Baseline)
+          </span>
+        {% endif %}
+      </div>
+      <canvas class="kpi-sparkline" data-sparkline="purple" width="90" height="34"></canvas>
     </div>
     <div class="kpi-trend">
       <span>Version: <strong class="code-inline">{{ models.runtime_predictor.version }}</strong></span> &bull; 
@@ -79,8 +86,11 @@
       <span class="kpi-title">Safety Fallback Guardrail</span>
       <span class="badge badge-warning">Rule 17 & 18</span>
     </div>
-    <div class="kpi-value" style="font-size: 1.5rem; color: var(--accent-warning-text);">
-      Enforced
+    <div class="kpi-value-row">
+      <div class="kpi-value" style="font-size: 1.45rem; color: var(--accent-warning-text);">
+        Enforced
+      </div>
+      <canvas class="kpi-sparkline" data-sparkline="success" width="90" height="34"></canvas>
     </div>
     <div class="kpi-trend">
       <span>Requires &ge; 15 historical runs; low confidence forces FULL_SUITE</span>
@@ -106,37 +116,37 @@
   <div class="card-header">
     <div>
       <div class="card-title">Empirical ML Evaluation Curves & Performance Analytics</div>
-      <div class="card-subtitle">Recorded holdout test split benchmarks (N=10, 2 Failures). Note: ROC and runtime plots are illustrative overlays reflecting recorded holdout metrics.</div>
+      <div class="card-subtitle">Empirical benchmarks from genuine Travis CI builds (N=3,808 records; 762 held-out test builds). All curves generated from actual predictions.</div>
     </div>
     <div>
-      <a href="/static/graphs/06_ml_evaluation_master_panel.png" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
+      <a href="/static/graphs/06_ml_evaluation_master_panel.png" target="_blank" class="btn-header primary" style="font-size: 0.78rem;">
         View High-Res Panel ↗
       </a>
     </div>
   </div>
-  <div style="padding: 16px 20px;">
+  <div style="padding: 10px 4px;">
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
-      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
-        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          Confusion Matrix (Recorded Holdout N=10)
+      <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; background: rgba(13, 20, 38, 0.6);">
+        <div style="padding: 10px 14px; font-weight: 700; font-size: 0.82rem; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); color: var(--text-primary);">
+          Confusion Matrix (Genuine TravisTorrent Holdout N=762)
         </div>
         <img src="/static/graphs/01_confusion_matrix.png" alt="Confusion Matrix" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
-      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
-        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          ROC-AUC Performance Curve (Illustrative, AUC = 1.00)
+      <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; background: rgba(13, 20, 38, 0.6);">
+        <div style="padding: 10px 14px; font-weight: 700; font-size: 0.82rem; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); color: var(--text-primary);">
+          Empirical ROC-AUC Curve (Travis CI Holdout AUC = 0.6411)
         </div>
         <img src="/static/graphs/02_roc_auc_curve.png" alt="ROC-AUC Curve" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
-      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
-        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          Runtime Actual vs. Predicted (Illustrative, R² = 0.832)
+      <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; background: rgba(13, 20, 38, 0.6);">
+        <div style="padding: 10px 14px; font-weight: 700; font-size: 0.82rem; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); color: var(--text-primary);">
+          Runtime Duration Actual vs. Predicted (Travis CI Holdout N=762)
         </div>
         <img src="/static/graphs/04_runtime_actual_vs_predicted.png" alt="Runtime Actual vs Predicted" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
-      <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card);">
-        <div style="padding: 10px 14px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
-          Pre-Execution Feature Importances (Statistical Association)
+      <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; background: rgba(13, 20, 38, 0.6);">
+        <div style="padding: 10px 14px; font-weight: 700; font-size: 0.82rem; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); color: var(--text-primary);">
+          Pre-Execution Feature Importances (Travis CI Feature Space)
         </div>
         <img src="/static/graphs/03_feature_importance.png" alt="Feature Importance" style="width: 100%; height: auto; display: block;" loading="lazy">
       </div>
@@ -151,6 +161,7 @@
       <div class="card-title">Prediction Inference History</div>
       <div class="card-subtitle">Audit trail of pre-execution features, predicted failure probabilities, and verified runtimes</div>
     </div>
+    <span class="badge badge-info">{{ predictions_history | length }} Recent Inferences</span>
   </div>
 
   <!-- Filter & Search Controls -->
@@ -199,7 +210,7 @@
           <td><span class="code-inline">{{ pred.model_version }}</span></td>
           <td>
             <span style="font-weight: 700; font-variant-numeric: tabular-nums;">{{ (pred.failure_prob * 100) | round(1) }}%</span>
-            {% if pred.failure_prob >= 0.40 %}
+            {% if pred.failure_prob >= 0.35 %}
               <span class="badge badge-failed" style="margin-left: 6px;">High Risk</span>
             {% else %}
               <span class="badge badge-success" style="margin-left: 6px;">Low Risk</span>

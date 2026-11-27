@@ -15,9 +15,11 @@ Executes within the CI/CD runner environment (e.g. GitHub Actions runner):
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
+from typing import Any
 
 import psutil
 
@@ -30,38 +32,242 @@ except ImportError:
     httpx = None
 
 
-def get_git_changed_files(base_ref: str = "HEAD~1") -> list:
-    """Extracts changed files using git diff."""
+EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _parse_git_numstat(output: str) -> dict[str, tuple[int, int]]:
+    """
+    Parses git diff --numstat output into a mapping of file_path -> (lines_added, lines_deleted).
+    Handles rename syntax such as '{old => new}/path', 'old => new', or binary files ('- -').
+    """
+    stats: dict[str, tuple[int, int]] = {}
+    for line in output.strip().splitlines():
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            add_s, del_s, raw_p = parts[0], parts[1], parts[2]
+            add_cnt = int(add_s) if add_s.isdigit() else 0
+            del_cnt = int(del_s) if del_s.isdigit() else 0
+
+            # Normalize rename formatting in numstat: '{old => new}/path' or 'old => new'
+            clean_p = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", raw_p)
+            if " => " in clean_p:
+                clean_p = clean_p.split(" => ")[-1]
+            clean_p = clean_p.replace("//", "/").strip().lstrip("/")
+            norm_path = clean_p.replace("\\", "/")
+            stats[norm_path] = (add_cnt, del_cnt)
+    return stats
+
+
+def get_git_changed_files(
+    base_ref: str | None = None,
+    target_ref: str | None = None,
+    base_sha: str | None = None,
+    target_sha: str | None = None,
+    repo_dir: str | None = None,
+) -> tuple[list[dict], str | None]:
+    """
+    Extracts changed files and exact line diff statistics (lines_added, lines_deleted)
+    between base and target git commits/refs.
+
+    Robustly handles:
+    1. Explicit base and target commit SHAs (or ranges).
+    2. Multi-commit pushes (using merge-base or full commit span).
+    3. Added, modified, deleted, and renamed files.
+    4. Initial commits with no parent (compared against git empty tree).
+    5. Missing base commits, shallow git clones, or corrupted repositories.
+
+    Returns:
+        tuple[list[dict], str | None]: (changes_list, error_reason_if_any)
+        If error_reason is not None, complete change information could not be verified,
+        and caller must trigger Full Suite fallback.
+    """
+    cwd = repo_dir or os.getcwd()
+
+    # 1. Verify working directory is inside a git work tree
     try:
-        cmd = ["git", "diff", "--name-status", base_ref, "HEAD"]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        chk = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if chk.returncode != 0 or chk.stdout.strip().lower() != "true":
+            return [], "Not a git repository or git binary unavailable"
+    except (subprocess.SubprocessError, OSError) as e:
+        return [], f"Git process execution error: {e}"
+
+    # Check for shallow repository
+    is_shallow = False
+    try:
+        sh_chk = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if sh_chk.returncode == 0 and sh_chk.stdout.strip().lower() == "true":
+            is_shallow = True
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+    # 2. Resolve target ref / SHA
+    target = (
+        target_sha or target_ref or os.getenv("TARGET_SHA") or os.getenv("GITHUB_SHA") or "HEAD"
+    )
+
+    # Verify target commit exists
+    try:
+        t_chk = subprocess.run(
+            ["git", "cat-file", "-e", f"{target}^{{commit}}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if t_chk.returncode != 0:
+            return [], f"Target commit '{target}' does not exist in local repository"
+    except (subprocess.SubprocessError, OSError) as e:
+        return [], f"Failed to verify target commit: {e}"
+
+    # 3. Resolve base ref / SHA
+    base = (
+        base_sha
+        or base_ref
+        or os.getenv("BASE_SHA")
+        or os.getenv("GITHUB_BASE_REF")
+        or os.getenv("BEFORE_SHA")
+    )
+
+    # In GitHub Actions new-branch pushes, before SHA can be 40 zeros
+    if base and set(base) == {"0"}:
+        base = None
+
+    # Determine if target has parents
+    has_parent = False
+    try:
+        p_chk = subprocess.run(
+            ["git", "rev-parse", "--verify", f"{target}^"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        has_parent = p_chk.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        has_parent = False
+
+    if not base:
+        if has_parent:
+            base = f"{target}~1"
+        else:
+            # Initial root commit with no parent
+            base = EMPTY_TREE_SHA
+
+    # Verify base commit exists
+    if base != EMPTY_TREE_SHA:
+        try:
+            b_chk = subprocess.run(
+                ["git", "cat-file", "-e", f"{base}^{{commit}}"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if b_chk.returncode != 0:
+                shallow_note = " (shallow clone with incomplete depth)" if is_shallow else ""
+                return (
+                    [],
+                    f"Base commit '{base}' could not be resolved in git history{shallow_note}",
+                )
+        except (subprocess.SubprocessError, OSError) as e:
+            return [], f"Failed to verify base commit: {e}"
+
+    # 4. Resolve effective base (support multi-commit branches via merge-base)
+    effective_base = base
+    if base != EMPTY_TREE_SHA:
+        try:
+            mb_res = subprocess.run(
+                ["git", "merge-base", base, target],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if mb_res.returncode == 0 and mb_res.stdout.strip():
+                effective_base = mb_res.stdout.strip()
+        except (subprocess.SubprocessError, OSError):
+            effective_base = base
+
+    # 5. Extract line-level statistics via git diff --numstat
+    numstat_map: dict[str, tuple[int, int]] = {}
+    try:
+        cmd_numstat = ["git", "diff", "--numstat", effective_base, target]
+        res_num = subprocess.run(cmd_numstat, cwd=cwd, capture_output=True, text=True, check=False)
+        if res_num.returncode == 0:
+            numstat_map = _parse_git_numstat(res_num.stdout)
+    except (subprocess.SubprocessError, OSError) as e:
+        return [], f"git diff --numstat execution failed: {e}"
+
+    # 6. Extract file change statuses via git diff --name-status
+    try:
+        cmd_name = ["git", "diff", "--name-status", effective_base, target]
+        res_name = subprocess.run(cmd_name, cwd=cwd, capture_output=True, text=True, check=False)
+        if res_name.returncode != 0:
+            return (
+                [],
+                f"git diff --name-status failed with code {res_name.returncode}: {res_name.stderr.strip()}",
+            )
+
         changes = []
-        for line in res.stdout.strip().splitlines():
+        for line in res_name.stdout.strip().splitlines():
             if not line:
                 continue
             parts = line.split("\t")
-            status = parts[0]
-            file_path = parts[-1]
-            change_type = "MODIFIED"
-            if status.startswith("A"):
-                change_type = "ADDED"
-            elif status.startswith("D"):
-                change_type = "DELETED"
-            elif status.startswith("R"):
-                change_type = "RENAMED"
+            status_code = parts[0]
 
-            changes.append(
-                {
-                    "file_path": file_path.replace("\\", "/"),
-                    "change_type": change_type,
-                    "lines_added": 10,
-                    "lines_deleted": 2,
-                }
-            )
-        return changes
+            old_path = None
+            if status_code.startswith(("R", "C")):
+                # Renamed or Copied: format is R100\told_path\tnew_path
+                old_path = parts[1] if len(parts) > 1 else None
+                file_path = parts[2] if len(parts) > 2 else parts[1]
+                change_type = "RENAMED" if status_code.startswith("R") else "MODIFIED"
+            elif status_code.startswith("A"):
+                file_path = parts[-1]
+                change_type = "ADDED"
+            elif status_code.startswith("D"):
+                file_path = parts[-1]
+                change_type = "DELETED"
+            else:
+                file_path = parts[-1]
+                change_type = "MODIFIED"
+
+            norm_path = file_path.replace("\\", "/").strip().lstrip("/")
+
+            # Lookup exact lines added and deleted from numstat map
+            lines_added, lines_deleted = numstat_map.get(norm_path, (0, 0))
+            if old_path and (lines_added == 0 and lines_deleted == 0):
+                norm_old = old_path.replace("\\", "/").strip().lstrip("/")
+                lines_added, lines_deleted = numstat_map.get(norm_old, (0, 0))
+
+            change_entry: dict[str, Any] = {
+                "file_path": norm_path,
+                "change_type": change_type,
+                "lines_added": lines_added,
+                "lines_deleted": lines_deleted,
+            }
+            if old_path:
+                change_entry["old_path"] = old_path.replace("\\", "/").strip().lstrip("/")
+
+            changes.append(change_entry)
+
+        return changes, None
+
     except (subprocess.SubprocessError, OSError) as e:
-        print(f"[Autonomous DevOps] Git diff detection failed ({e}). Proceeding with fallback.")
-        return []
+        return [], f"git diff detection failed: {e}"
 
 
 def get_commit_metadata() -> dict:
@@ -198,7 +404,21 @@ def main():
     parser.add_argument(
         "--api-url", default=os.getenv("OPTIMIZATION_API_URL", "http://localhost:8000")
     )
-    parser.add_argument("--base-ref", default="HEAD~1")
+    parser.add_argument(
+        "--base-sha",
+        default=os.getenv("BASE_SHA") or os.getenv("GITHUB_BASE_REF") or os.getenv("BEFORE_SHA"),
+        help="Explicit base commit SHA or ref for comparison range",
+    )
+    parser.add_argument(
+        "--target-sha",
+        default=os.getenv("TARGET_SHA") or os.getenv("GITHUB_SHA") or "HEAD",
+        help="Explicit target commit SHA or ref for comparison range",
+    )
+    parser.add_argument(
+        "--base-ref",
+        default=None,
+        help="Backward-compatible base ref alias (defaults to --base-sha or HEAD~1)",
+    )
     parser.add_argument("--force-full", action="store_true", help="Manually force full test suite")
     parser.add_argument("--repo-name", default="AutonomousDevOps/CI-CD-PIPELINE")
     parser.add_argument("--branch", default=os.getenv("GITHUB_REF_NAME", "main"))
@@ -217,6 +437,7 @@ def main():
     print("=" * 70)
 
     # 1. Identify Changed Files
+    git_diff_error = None
     if args.changed_files:
         changed_files = []
         for cf in args.changed_files:
@@ -234,16 +455,41 @@ def main():
                 }
             )
     else:
-        changed_files = get_git_changed_files(args.base_ref)
+        changed_files, git_diff_error = get_git_changed_files(
+            base_ref=args.base_ref,
+            base_sha=args.base_sha,
+            target_sha=args.target_sha,
+        )
     commit_meta = get_commit_metadata()
 
     print(f"📌 Repository: {args.repo_name} | Branch: {args.branch}")
     print(f"📌 Commit: {commit_meta['commit_hash'][:8]} - {commit_meta['commit_message']}")
     print(f"📌 Detected Changed Files: {len(changed_files)}")
+    if git_diff_error:
+        print(f"⚠️  Git change detection notice: {git_diff_error}")
 
-    # 2. Plan Generation with Deterministic Safety Fallback (Rule 19)
+    # 2. Plan Generation with Deterministic Safety Fallback (Rules 19, 20, 21)
     plan = None
-    if not args.force_full and changed_files:
+    if git_diff_error:
+        print(f"⚠️  [Safety Rule 20 Triggered] Incomplete git change information: {git_diff_error}")
+        print("🛡️  Enforcing MANDATORY FULL-SUITE FALLBACK for guaranteed safety.")
+        plan = {
+            "decision": "FULL_SUITE",
+            "decision_reason": f"Safety Rule 20: Incomplete change context ({git_diff_error})",
+            "is_optimized": False,
+            "fallback_triggered": True,
+            "fallback_reason": f"Safety Rule 20: Incomplete change context ({git_diff_error})",
+            "selected_tests": [],
+            "pytest_command": "python -m pytest tests/ tests_sample_app/ -v",
+            "selected_tests_count": 0,
+            "total_tests_count": 0,
+            "tests_reduction_pct": 0.0,
+            "predicted_failure_probability": 0.0,
+            "predicted_duration_sec": 0.0,
+            "estimated_time_saved_sec": 0.0,
+            "triggered_safety_rules": ["RULE_20_INCOMPLETE_CHANGE_CONTEXT"],
+        }
+    elif not args.force_full and changed_files:
         payload = {
             "repository_name": args.repo_name,
             "commit_hash": commit_meta["commit_hash"],

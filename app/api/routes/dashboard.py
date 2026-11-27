@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -27,7 +28,7 @@ from app.database.models import (
     SecurityScan,
     Telemetry,
 )
-from app.database.session import get_db
+from app.database.session import get_db, get_db_info
 from app.ml.model_manager import ModelManager
 from app.telemetry.anomaly_detector import StatisticalAnomalyDetector
 from app.telemetry.event_correlator import EventCorrelator, FailureEvent
@@ -41,17 +42,98 @@ templates = Jinja2Templates(directory=TEMPLATE_DIR)
 _model_manager_singleton: ModelManager | None = None
 
 
+def compute_dashboard_aggregations(
+    runs: list[PipelineRun], plans: list[ExecutionPlan] | None = None
+) -> dict[str, any]:
+    """
+    Single shared status and execution aggregation function across dashboard views and metrics APIs.
+    Reconciles all lifecycle statuses (SUCCESS, FAILED, ABORTED, CANCELLED, RUNNING, PENDING)
+    and execution decisions (OPTIMIZED, FULL_SUITE, UNPLANNED).
+    """
+    total_runs = len(runs)
+    successful_runs = sum(1 for r in runs if r.status == "SUCCESS")
+    failed_runs = sum(1 for r in runs if r.status == "FAILED")
+    aborted_runs = sum(1 for r in runs if r.status == "ABORTED")
+    cancelled_runs = sum(1 for r in runs if r.status == "CANCELLED")
+    running_runs = sum(1 for r in runs if r.status == "RUNNING")
+    pending_runs = sum(1 for r in runs if r.status == "PENDING")
+
+    planned_optimized_runs = 0
+    fallback_runs = 0
+    unplanned_runs = 0
+
+    for r in runs:
+        decision, _, _, _, _, _ = determine_execution_attribution(r)
+        if decision == "OPTIMIZED":
+            planned_optimized_runs += 1
+        elif decision == "FULL_SUITE":
+            fallback_runs += 1
+        else:
+            unplanned_runs += 1
+
+    # Completed runs: strictly completed runs (SUCCESS or FAILED) with positive duration
+    # Excludes RUNNING (duration 0), ABORTED, and CANCELLED runs
+    completed_runs = [
+        r for r in runs if r.status in ("SUCCESS", "FAILED") and r.total_duration_sec > 0
+    ]
+    avg_duration = (
+        round(sum(r.total_duration_sec for r in completed_runs) / max(1, len(completed_runs)), 2)
+        if completed_runs
+        else 0.0
+    )
+
+    # Estimated time saved across eligible OPTIMIZED plans
+    if plans is None:
+        plans = []
+    opt_plans = [p for p in plans if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0]
+    estimated_time_saved_total = round(
+        sum(20.0 * (p.tests_reduction_pct / 100.0) for p in opt_plans),
+        1,
+    )
+
+    return {
+        "total_runs": total_runs,
+        "successful_runs": successful_runs,
+        "failed_runs": failed_runs,
+        "aborted_runs": aborted_runs,
+        "cancelled_runs": cancelled_runs,
+        "running_runs": running_runs,
+        "pending_runs": pending_runs,
+        "completed_runs_count": len(completed_runs),
+        "avg_duration_sec": avg_duration,
+        "estimated_time_saved_sec": estimated_time_saved_total,
+        "planned_optimized_runs": planned_optimized_runs,
+        "optimized_runs": planned_optimized_runs,
+        "fallback_runs": fallback_runs,
+        "unplanned_runs": unplanned_runs,
+        "optimization_rate_pct": round((planned_optimized_runs / max(1, total_runs)) * 100.0, 1),
+        "fallback_rate_pct": round((fallback_runs / max(1, total_runs)) * 100.0, 1),
+    }
+
+
 def determine_execution_attribution(run: PipelineRun) -> tuple[str, bool, bool, int, int, str]:
     """
     Deterministically attributes execution decision, flags, test counts, and reason.
     Returns: (decision, is_optimized, is_fallback, selected_tests, total_tests, decision_reason)
 
     Guarantees:
+    - If fallback_triggered is True, ALWAYS attributes 'FULL_SUITE' (safety precedence over optimistic flags).
     - Never labels a run as 'OPTIMIZED' unless an execution plan explicitly authorized it AND selected_tests > 0.
-    - Accurately attributes 'FULL_SUITE' if plan mandated it or fallback_triggered is True.
+    - Zero-selected-test plans are attributed as 'FULL_SUITE' fallback.
     - Accurately attributes 'RUNNING' for in-progress runs without a completed plan.
     - Accurately attributes 'UNPLANNED' for baseline/direct executions without an AST plan.
     """
+    # 1. Safety fallback precedence: if fallback was triggered, execution was Full Suite
+    if run.fallback_triggered:
+        plan = run.execution_plan
+        selected_count = plan.selected_tests_count if plan else 0
+        total_count = plan.total_tests_count if plan else 0
+        dec_reason = run.fallback_reason or (
+            plan.decision_reason if plan else "Deterministic safety fallback enforced"
+        )
+        return "FULL_SUITE", False, True, selected_count, total_count, dec_reason
+
+    # 2. Check execution plan entity
     plan = run.execution_plan
     if plan is not None:
         selected_count = plan.selected_tests_count
@@ -63,16 +145,7 @@ def determine_execution_attribution(run: PipelineRun) -> tuple[str, bool, bool, 
             return "FULL_SUITE", False, True, selected_count, total_count, dec_reason
     else:
         # No plan entity attached
-        if run.fallback_triggered:
-            return (
-                "FULL_SUITE",
-                False,
-                True,
-                0,
-                0,
-                run.fallback_reason or "Deterministic safety fallback enforced",
-            )
-        elif run.status == "RUNNING":
+        if run.status == "RUNNING":
             return (
                 "RUNNING",
                 False,
@@ -124,72 +197,37 @@ def root_dashboard(request: Request, db: Session = Depends(get_db)):
 def get_overview_page(request: Request, db: Session = Depends(get_db)):
     """Page A: Executive Pipeline Overview."""
     runs = db.query(PipelineRun).order_by(PipelineRun.created_at.desc()).all()
-    total_runs = len(runs)
-    successful_runs = sum(1 for r in runs if r.status == "SUCCESS")
-    failed_runs = sum(1 for r in runs if r.status == "FAILED")
-    aborted_runs = sum(1 for r in runs if r.status == "ABORTED")
-    running_runs = sum(1 for r in runs if r.status == "RUNNING")
-
-    # Execution attribution across all runs
-    planned_optimized_runs = 0
-    fallback_runs = 0
-    unplanned_runs = 0
+    plans = db.query(ExecutionPlan).all()
+    kpi_data = compute_dashboard_aggregations(runs, plans)
 
     recent_runs = []
-    for r in runs:
+    for r in runs[:10]:
         decision, is_opt, is_fb, sel_count, tot_count, dec_reason = determine_execution_attribution(
             r
         )
-        if decision == "OPTIMIZED":
-            planned_optimized_runs += 1
-        elif decision == "FULL_SUITE":
-            fallback_runs += 1
-        else:
-            unplanned_runs += 1
+        repo_name = r.repository.name if r.repository else "AutonomousDevOps/CI-CD-PIPELINE"
+        commit_hash = r.commit.commit_hash if r.commit else "local-commit"
+        recent_runs.append(
+            {
+                "id": r.id,
+                "repository_name": repo_name,
+                "commit_hash": commit_hash,
+                "status": r.status,
+                "duration_sec": r.total_duration_sec,
+                "decision": decision,
+                "is_optimized": is_opt,
+                "fallback_triggered": is_fb,
+                "selected_tests": sel_count,
+                "total_tests": tot_count,
+                "decision_reason": dec_reason,
+                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
+            }
+        )
 
-        if len(recent_runs) < 10:
-            repo_name = r.repository.name if r.repository else "AutonomousDevOps/CI-CD-PIPELINE"
-            commit_hash = r.commit.commit_hash if r.commit else "local-commit"
-            recent_runs.append(
-                {
-                    "id": r.id,
-                    "repository_name": repo_name,
-                    "commit_hash": commit_hash,
-                    "status": r.status,
-                    "duration_sec": r.total_duration_sec,
-                    "decision": decision,
-                    "is_optimized": is_opt,
-                    "fallback_triggered": is_fb,
-                    "selected_tests": sel_count,
-                    "total_tests": tot_count,
-                    "decision_reason": dec_reason,
-                    "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
-                }
-            )
-
-    # Calculate average duration across clearly defined completed runs (status in SUCCESS, FAILED with duration > 0)
-    # Strictly excludes RUNNING runs (duration 0.0s) and invalid/aborted duration records
+    # Measured empirical time saved: actual differences from completed runs with telemetry duration > 0
     completed_runs = [
         r for r in runs if r.status in ("SUCCESS", "FAILED") and r.total_duration_sec > 0
     ]
-    avg_duration = (
-        round(sum(r.total_duration_sec for r in completed_runs) / max(1, len(completed_runs)), 2)
-        if completed_runs
-        else 0.0
-    )
-
-    # Optimization rate: percentage of planned optimized runs across all audited runs
-    optimization_rate = round((planned_optimized_runs / max(1, total_runs)) * 100.0, 1)
-    fallback_rate = round((fallback_runs / max(1, total_runs)) * 100.0, 1)
-
-    # Estimated time saved: modeled on standard 20.0s test suite baseline across eligible OPTIMIZED plans
-    plans = db.query(ExecutionPlan).all()
-    opt_plans = [p for p in plans if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0]
-    estimated_time_saved_total = round(
-        sum(20.0 * (p.tests_reduction_pct / 100.0) for p in opt_plans),
-        1,
-    )
-    # Measured empirical time saved: actual differences from completed runs with telemetry duration > 0
     measured_time_saved_total = round(
         sum(
             max(0.0, 20.0 - r.total_duration_sec)
@@ -202,7 +240,7 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
     )
 
     # Chart data
-    chart_labels = [f"Run {i + 1}" for i in range(min(10, total_runs))]
+    chart_labels = [f"Run {i + 1}" for i in range(min(10, kpi_data["total_runs"]))]
     chart_durations = [r.total_duration_sec for r in reversed(runs[:10])]
 
     return templates.TemplateResponse(
@@ -213,21 +251,12 @@ def get_overview_page(request: Request, db: Session = Depends(get_db)):
             "active_page": "overview",
             "is_demo_data": False,
             "kpis": {
-                "total_runs": total_runs,
-                "successful_runs": successful_runs,
-                "failed_runs": failed_runs,
-                "aborted_runs": aborted_runs,
-                "running_runs": running_runs,
-                "completed_runs_count": len(completed_runs),
-                "optimized_runs": planned_optimized_runs,
-                "fallback_runs": fallback_runs,
-                "unplanned_runs": unplanned_runs,
-                "avg_duration_sec": avg_duration,
-                "time_saved_sec": estimated_time_saved_total,
+                **kpi_data,
+                "time_saved_sec": kpi_data["estimated_time_saved_sec"],
                 "measured_time_saved_sec": measured_time_saved_total,
                 "time_saved_basis": "Modeled from standard 20.0s full-suite baseline",
-                "optimization_rate": optimization_rate,
-                "fallback_rate": fallback_rate,
+                "optimization_rate": kpi_data["optimization_rate_pct"],
+                "fallback_rate": kpi_data["fallback_rate_pct"],
             },
             "recent_runs": recent_runs,
             "chart_labels": chart_labels,
@@ -315,6 +344,8 @@ def get_ai_insights_page(request: Request, db: Session = Depends(get_db)):
             }
         )
 
+    meta_info = models_status.get("provenance_metadata", {})
+
     return templates.TemplateResponse(
         request=request,
         name="ai_insights.html",
@@ -333,6 +364,7 @@ def get_ai_insights_page(request: Request, db: Session = Depends(get_db)):
                     "version": models_status["runtime_predictor"]["version"],
                 },
             },
+            "metadata": meta_info,
             "predictions_history": pred_history,
             "risk_chart_labels": risk_labels,
             "risk_chart_values": risk_values,
@@ -419,20 +451,21 @@ def get_security_page(request: Request, db: Session = Depends(get_db)):
 def get_observability_page(request: Request, db: Session = Depends(get_db)):
     """Page F: Observability & Telemetry."""
     telemetries = db.query(Telemetry).order_by(Telemetry.collected_at.desc()).limit(20).all()
-    total_records = len(telemetries)
+    all_time_telemetry_count = db.query(Telemetry).count()
+    recent_records_count = len(telemetries)
 
     avg_cpu = (
-        round(sum(t.cpu_percent_avg for t in telemetries) / max(1, total_records), 1)
-        if total_records > 0
+        round(sum(t.cpu_percent_avg for t in telemetries) / max(1, recent_records_count), 1)
+        if recent_records_count > 0
         else 0.0
     )
     avg_mem = (
-        round(sum(t.memory_mb_peak for t in telemetries) / max(1, total_records), 1)
-        if total_records > 0
+        round(sum(t.memory_mb_peak for t in telemetries) / max(1, recent_records_count), 1)
+        if recent_records_count > 0
         else 0.0
     )
 
-    chart_labels = [f"Job {i + 1}" for i in range(min(15, total_records))]
+    chart_labels = [f"Job {i + 1}" for i in range(min(15, recent_records_count))]
     chart_cpu = [t.cpu_percent_avg for t in reversed(telemetries[:15])]
     chart_mem = [t.memory_mb_peak for t in reversed(telemetries[:15])]
 
@@ -444,8 +477,8 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
     anomaly_status = "PENDING_TELEMETRY"
     anomaly_findings = []
 
-    if total_records > 1:
-        hist_count = total_records - 1
+    if recent_records_count > 1:
+        hist_count = recent_records_count - 1
         if hist_count >= MIN_REQUIRED_SAMPLES:
             current_t = telemetries[0]
             curr_dur = current_t.pipeline_run.total_duration_sec if current_t.pipeline_run else 0.0
@@ -473,7 +506,7 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
             anomaly_findings = [
                 f"Insufficient historical telemetry records ({hist_count}/{MIN_REQUIRED_SAMPLES} required) to establish statistical baseline."
             ]
-    elif total_records == 1:
+    elif recent_records_count == 1:
         anomaly_status = "INSUFFICIENT_SAMPLES"
         anomaly_findings = [
             f"Single telemetry record observed (0/{MIN_REQUIRED_SAMPLES} historical samples required)."
@@ -515,7 +548,9 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
             "anomalies_count": anomalies_count,
             "anomaly_status": anomaly_status,
             "anomaly_findings": anomaly_findings,
-            "total_telemetry_records": total_records,
+            "total_telemetry_records": all_time_telemetry_count,
+            "recent_telemetry_records": recent_records_count,
+            "telemetry_population": f"Latest {recent_records_count} runs (All-time recorded: {all_time_telemetry_count})",
             "min_required_samples": MIN_REQUIRED_SAMPLES,
             "correlated_groups": [g.to_dict() for g in groups],
             "telemetry_chart_labels": chart_labels,
@@ -526,10 +561,37 @@ def get_observability_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/dashboard/health", response_class=HTMLResponse)
-def get_health_page(request: Request):
+def get_health_page(request: Request, db: Session = Depends(get_db)):
     """Page G: System Health & Diagnostics."""
     mm = get_model_manager(request)
     models_status = mm.get_models_status()
+
+    # 1. Database Connectivity & Actual Engine Identification
+    db_info = get_db_info(db)
+    db_connected = False
+    schema_ready = False
+
+    try:
+        from sqlalchemy import text
+
+        db.execute(text("SELECT 1"))
+        db_connected = True
+        db.query(PipelineRun).limit(1).all()
+        schema_ready = True
+    except (SQLAlchemyError, OSError):
+        db_connected = False
+        schema_ready = False
+
+    # 2. Overall Subsystem & API Status
+    models_loaded = models_status.get("failure_predictor", {}).get(
+        "loaded", False
+    ) and models_status.get("runtime_predictor", {}).get("loaded", False)
+    if db_connected and schema_ready and models_loaded:
+        api_status = "HEALTHY"
+    elif db_connected and schema_ready:
+        api_status = "DEGRADED (ML Unloaded)"
+    else:
+        api_status = "UNHEALTHY"
 
     return templates.TemplateResponse(
         request=request,
@@ -539,9 +601,13 @@ def get_health_page(request: Request):
             "active_page": "health",
             "is_demo_data": False,
             "health_status": {
-                "api_status": "ONLINE",
+                "api_status": api_status,
                 "version": settings.VERSION,
-                "db_engine": "PostgreSQL / SQLite",
+                "db_engine": db_info["engine_name"],
+                "db_connected": db_connected,
+                "db_status": "CONNECTED" if db_connected else "DISCONNECTED",
+                "schema_ready": schema_ready,
+                "fallback_active": db_info["fallback_active"],
                 "failure_model_version": models_status["failure_predictor"]["version"],
                 "runtime_model_version": models_status["runtime_predictor"]["version"],
                 "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -554,55 +620,5 @@ def get_health_page(request: Request):
 def get_dashboard_metrics(db: Session = Depends(get_db)):
     """API endpoint returning aggregated JSON metrics for graphs or third-party consumers."""
     runs = db.query(PipelineRun).all()
-    total_runs = len(runs)
-    successful_runs = sum(1 for r in runs if r.status == "SUCCESS")
-    failed_runs = sum(1 for r in runs if r.status == "FAILED")
-    aborted_runs = sum(1 for r in runs if r.status == "ABORTED")
-    running_runs = sum(1 for r in runs if r.status == "RUNNING")
-
-    planned_optimized_runs = sum(
-        1
-        for r in runs
-        if r.execution_plan
-        and r.execution_plan.decision == "OPTIMIZED"
-        and r.execution_plan.selected_tests_count > 0
-    )
-    fallback_runs = sum(
-        1
-        for r in runs
-        if r.fallback_triggered or (r.execution_plan and r.execution_plan.decision == "FULL_SUITE")
-    )
-    unplanned_runs = total_runs - (planned_optimized_runs + fallback_runs)
-
-    completed_runs = [
-        r for r in runs if r.status in ("SUCCESS", "FAILED") and r.total_duration_sec > 0
-    ]
-    avg_duration = (
-        round(sum(r.total_duration_sec for r in completed_runs) / max(1, len(completed_runs)), 2)
-        if completed_runs
-        else 0.0
-    )
-
     plans = db.query(ExecutionPlan).all()
-    opt_plans = [p for p in plans if p.decision == "OPTIMIZED" and p.tests_reduction_pct > 0]
-    estimated_time_saved_total = round(
-        sum(20.0 * (p.tests_reduction_pct / 100.0) for p in opt_plans),
-        1,
-    )
-
-    return {
-        "total_runs": total_runs,
-        "successful_runs": successful_runs,
-        "failed_runs": failed_runs,
-        "aborted_runs": aborted_runs,
-        "running_runs": running_runs,
-        "completed_runs_count": len(completed_runs),
-        "avg_duration_sec": avg_duration,
-        "estimated_time_saved_sec": estimated_time_saved_total,
-        "planned_optimized_runs": planned_optimized_runs,
-        "optimized_runs": planned_optimized_runs,
-        "fallback_runs": fallback_runs,
-        "unplanned_runs": unplanned_runs,
-        "optimization_rate_pct": round((planned_optimized_runs / max(1, total_runs)) * 100.0, 1),
-        "fallback_rate_pct": round((fallback_runs / max(1, total_runs)) * 100.0, 1),
-    }
+    return compute_dashboard_aggregations(runs, plans)

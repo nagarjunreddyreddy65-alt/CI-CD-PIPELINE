@@ -1,0 +1,8 @@
+#! 0-ci-cd-pipeline-namespace.yaml
+# Generated code, do not edit
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: ci-cd-pipeline
+    labels:
+        com.docker.compose.project: ci-cd-pipeline

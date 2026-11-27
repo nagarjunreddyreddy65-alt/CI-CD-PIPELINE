@@ -38,9 +38,11 @@ class FailurePredictor:
         n_estimators: int = 100,
         random_state: int = 42,
         risk_threshold: float = 0.35,
+        feature_names: list[str] | None = None,
     ):
         self.model_version = model_version
         self.risk_threshold = risk_threshold
+        self.feature_names = feature_names
         self.model = RandomForestClassifier(
             n_estimators=n_estimators,
             class_weight="balanced",
@@ -175,12 +177,20 @@ class FailurePredictor:
 
         if isinstance(features, np.ndarray):
             arr = features.flatten()
-            hist_rate = float(arr[8]) if len(arr) > 8 else 0.05
-            is_sens = int(arr[6]) if len(arr) > 6 else 0
+            hist_rate = float(arr[4]) if len(arr) > 4 else (float(arr[8]) if len(arr) > 8 else 0.05)
+            is_sens = int(arr[7]) if len(arr) > 7 else (int(arr[6]) if len(arr) > 6 else 0)
             X_input = arr.reshape(1, -1)
+        elif (
+            hasattr(features, "to_travistorrent_array")
+            and getattr(self, "feature_names", None) is not None
+            and "build_number" in self.feature_names
+        ):
+            hist_rate = getattr(features, "historical_failure_rate", 0.05)
+            is_sens = getattr(features, "is_sensitive_change", 0)
+            X_input = features.to_travistorrent_array()
         else:
-            hist_rate = features.historical_failure_rate
-            is_sens = features.is_sensitive_change
+            hist_rate = getattr(features, "historical_failure_rate", 0.05)
+            is_sens = getattr(features, "is_sensitive_change", 0)
             X_input = features.to_array()
 
         if not self.is_trained:

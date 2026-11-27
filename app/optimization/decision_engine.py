@@ -572,8 +572,13 @@ class DecisionEngine:
         is_late_completion = run.status == "ABORTED" and status in ("SUCCESS", "FAILED")
         terminal_states = {"SUCCESS", "FAILED", "CANCELLED"}
         if run.status in terminal_states and not is_late_completion:
-            # Already completed terminal run: preserve existing outcome
-            return run
+            if run.status == status:
+                # Duplicate terminal request with identical status: idempotent no-op
+                return run
+            # Conflicting terminal update
+            raise ValueError(
+                f"Cannot transition pipeline run '{pipeline_run_id}' from terminal status '{run.status}' to '{status}'."
+            )
 
         completed_ts = datetime.now(UTC)
         run.completed_at = completed_ts

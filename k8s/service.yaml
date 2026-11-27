@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: autonomous-devops-backend
+  labels:
+    app: autonomous-devops
+    component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app: autonomous-devops
+    component: backend

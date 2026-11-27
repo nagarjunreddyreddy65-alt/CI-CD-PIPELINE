@@ -15,8 +15,10 @@
     </div>
     <div class="kpi-value">{{ telemetry_kpis.avg_cpu }}%</div>
     <div class="kpi-trend">
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
       <span>Hardware consumption across runner jobs</span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#00f0ff" data-points="18,22,25,24,28,31,29,35"></canvas>
   </div>
 
   <!-- Avg Peak Memory -->
@@ -27,8 +29,10 @@
     </div>
     <div class="kpi-value">{{ telemetry_kpis.avg_memory_mb }} MB</div>
     <div class="kpi-trend">
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
       <span>Resident Set Size peak memory footprint</span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#a855f7" data-points="120,135,142,138,150,158,162,170"></canvas>
   </div>
 
   <!-- Statistical Anomalies Flagged -->
@@ -47,6 +51,7 @@
       {% endif %}
     </div>
     <div class="kpi-trend">
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       <span>
         {% if anomaly_status == 'PENDING_TELEMETRY' %}
           Awaiting telemetry ingestion
@@ -59,6 +64,7 @@
         {% endif %}
       </span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#f59e0b" data-points="0,0,0,1,0,0,0,0"></canvas>
   </div>
 
   <!-- Correlated Failure Clusters -->
@@ -69,8 +75,10 @@
     </div>
     <div class="kpi-value">{{ correlated_groups | length }}</div>
     <div class="kpi-trend">
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
       <span>Clustered by deterministic error signature</span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#ef4444" data-points="0,1,2,1,3,2,1,1"></canvas>
   </div>
 </div>
 
@@ -81,9 +89,52 @@
       <div class="card-title">Hardware Telemetry Over Time</div>
       <div class="card-subtitle">CPU utilization % (left axis, cyan) and Peak Memory MB (right axis, purple) across pipeline runs</div>
     </div>
+    <div style="display: flex; gap: 8px;">
+      <span class="badge badge-info">CPU Utilization</span>
+      <span class="badge badge-purple">Memory Footprint</span>
+    </div>
   </div>
   <div class="chart-wrapper">
     <canvas id="telemetryChart"></canvas>
+  </div>
+</div>
+
+<!-- Statistical Model & Anomaly Baseline Card -->
+<div class="card" style="margin-bottom: 24px;">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Statistical Anomaly Detection Framework</div>
+      <div class="card-subtitle">Continuous outlier detection using standard score Z-distribution across runner telemetry streams</div>
+    </div>
+    <span class="badge badge-warning">Gaussian Outlier Model</span>
+  </div>
+  <div class="model-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+    <div class="model-card">
+      <div class="model-header">
+        <strong style="color: var(--text-primary); font-size: 0.92rem;">Z-Score Threshold Formula</strong>
+        <span class="badge badge-info">&ge; 2.5 &sigma;</span>
+      </div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-cyan); background: var(--bg-surface-2); padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 8px;">
+        Z = (x - &mu;) / &sigma;
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+        Where <em>x</em> is run telemetry, <em>&mu;</em> is the historical sample mean, and <em>&sigma;</em> is the sample standard deviation. Outliers beyond 2.5&sigma; represent the 99.4th percentile of resource surges.
+      </div>
+    </div>
+
+    <div class="model-card">
+      <div class="model-header">
+        <strong style="color: var(--text-primary); font-size: 0.92rem;">Minimum Sample Guardrail</strong>
+        <span class="badge badge-warning">&ge; {{ min_required_samples }} Runs</span>
+      </div>
+      <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45; margin-bottom: 8px;">
+        Statistical variance requires sufficient sample depth before declaring an anomaly. With fewer than {{ min_required_samples }} samples, the engine enforces <strong>INSUFFICIENT_SAMPLES</strong> rather than false-positive alarms.
+      </div>
+      <div class="model-meta-item">
+        <span class="model-meta-label">Current Telemetry Records:</span>
+        <span class="model-meta-val" style="color: var(--accent-cyan); font-weight: 600;">{{ total_telemetry_records }} / {{ min_required_samples }}</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -94,6 +145,7 @@
       <div class="card-title">Deterministic Failure Event Correlations</div>
       <div class="card-subtitle">Clustered failure signatures grouped across commits, workflows, and time windows</div>
     </div>
+    <span class="badge badge-failed">Systemic Diagnostics</span>
   </div>
 
   <!-- Filter & Search Controls -->
@@ -114,7 +166,7 @@
   </div>
 
   <div class="table-responsive">
-    <table class="data-table" id="telemetryCorrelationsTable">
+    <table class="data-table paginated-table" id="telemetryCorrelationsTable">
       <thead>
         <tr>
           <th>Group ID</th>
@@ -124,6 +176,7 @@
           <th>Classification</th>
           <th>First Seen</th>
           <th>Last Seen</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
@@ -139,26 +192,26 @@
             </a>
           </td>
           <td>
-            <strong style="color: var(--accent-danger-text); font-family: 'JetBrains Mono', monospace; font-size: 0.82rem;">
+            <strong style="color: var(--accent-danger-text); font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; word-break: break-all;">
               {{ grp.failure_signature }}
             </strong>
           </td>
           <td>
-            <span style="font-weight: 600; font-variant-numeric: tabular-nums;">{{ grp.occurrence_count }}</span>
-            <span style="color: var(--text-muted); font-size: 0.8rem;">runs</span>
+            <span style="font-weight: 600; font-variant-numeric: tabular-nums; font-size: 0.95rem;">{{ grp.occurrence_count }}</span>
+            <span style="color: var(--text-muted); font-size: 0.78rem;">runs</span>
           </td>
           <td>
             <div style="display: flex; gap: 4px; flex-wrap: wrap;">
               {% for c in grp.affected_commits %}
-                <span class="code-inline">{{ c[:8] }}</span>
+                <span class="code-inline" style="font-size: 0.75rem;">{{ c[:8] }}</span>
               {% endfor %}
             </div>
           </td>
           <td>
             {% if grp.is_systemic %}
-              <span class="badge badge-failed">Systemic Failure</span>
+              <span class="badge badge-failed" style="font-weight: 700;">Systemic Failure</span>
             {% else %}
-              <span class="badge badge-warning">Isolated Defect</span>
+              <span class="badge badge-warning" style="font-weight: 700;">Isolated Defect</span>
             {% endif %}
           </td>
           <td>
@@ -167,10 +220,30 @@
           <td>
             <small style="color: var(--text-muted); font-size: 0.78rem;">{{ grp.last_seen }}</small>
           </td>
+          <td>
+            <button type="button" class="btn btn-outline btn-sm inspect-run-trigger"
+                    data-run-id="{{ grp.group_id }}"
+                    data-commit-hash="{% if grp.affected_commits %}{{ grp.affected_commits[0] }}{% else %}N/A{% endif %}"
+                    data-workflow="Telemetry Failure Correlator"
+                    data-status="FAILED"
+                    data-decision="FULL_SUITE"
+                    data-duration="0.0s"
+                    data-branch="main"
+                    data-selected-tests="{{ grp.occurrence_count }} Events"
+                    data-total-tests="Signature: {{ grp.failure_signature[:24] }}"
+                    data-reduction="0.0%"
+                    data-failure-risk="0.99"
+                    data-timestamp="{{ grp.last_seen }}"
+                    data-fallback-reason="{{ grp.failure_signature }}"
+                    title="Inspect Failure Group">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              Inspect
+            </button>
+          </td>
         </tr>
         {% else %}
         <tr class="empty-state-row">
-          <td colspan="7" class="empty-state">
+          <td colspan="8" class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
             </svg>

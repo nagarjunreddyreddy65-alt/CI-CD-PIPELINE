@@ -270,13 +270,19 @@ def complete_pipeline_run_status(
     Explicitly transitions a PipelineRun to a terminal status (SUCCESS, FAILED, CANCELLED, ABORTED),
     recording exact duration, completion timestamp, and an audit trail log entry.
     """
-    run = DecisionEngine.complete_pipeline_run(
-        db=db,
-        pipeline_run_id=run_id,
-        status=req.status,
-        total_duration_sec=req.total_duration_sec,
-        error_message=req.error_message,
-    )
+    try:
+        run = DecisionEngine.complete_pipeline_run(
+            db=db,
+            pipeline_run_id=run_id,
+            status=req.status,
+            total_duration_sec=req.total_duration_sec,
+            error_message=req.error_message,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
     if not run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -1,23 +1,17 @@
-# Multi-stage Dockerfile for Autonomous DevOps Platform
-FROM python:3.11-slim AS builder
+# Multi-stage Dockerfile for Autonomous DevOps Platform - Migrated to Docker Hardened Images
+FROM dhi.io/python:3.11-debian-dev AS builder
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Final Runtime Image
-FROM python:3.11-slim AS runner
+FROM dhi.io/python:3.11-debian AS runner
 
 WORKDIR /app
 
@@ -25,22 +19,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     ENVIRONMENT=production
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder --chown=root:root /usr /usr
 
 # Copy application source
 COPY . /app
-
-# Non-root user for security
-RUN useradd -m -u 1000 devopsuser && \
-    chown -R devopsuser:devopsuser /app
-USER devopsuser
 
 EXPOSE 8000
 

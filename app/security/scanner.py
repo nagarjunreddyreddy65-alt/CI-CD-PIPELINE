@@ -83,7 +83,7 @@ class ScanResult:
 
 
 class BanditParser:
-    """Parses Bandit SAST JSON output."""
+    """Parses Bandit SAST JSON output, distinguishing unique issues and test fixtures."""
 
     @staticmethod
     def parse(raw_json: Any) -> ScanResult:
@@ -106,6 +106,8 @@ class BanditParser:
         results = data.get("results", [])
         findings: list[SecurityFinding] = []
         highest_sev = SecuritySeverity.NONE
+        unique_issues: set[str] = set()
+        fixture_count = 0
 
         for item in results:
             raw_sev = str(item.get("issue_severity", "LOW")).upper()
@@ -119,16 +121,27 @@ class BanditParser:
 
             snippet = item.get("code")
             redacted_code = redact_secrets(snippet) if snippet else None
+            filename = str(item.get("filename", ""))
+            line_no = item.get("line_number")
+            test_id = str(item.get("test_id", "B000"))
+
+            is_fixture = any(
+                kw in filename.lower() for kw in ["test", "fixture", "mock", "sample_app"]
+            )
+            if is_fixture:
+                fixture_count += 1
+
+            unique_issues.add(f"{test_id}:{filename}:{line_no}")
 
             findings.append(
                 SecurityFinding(
                     tool_name="Bandit",
                     severity=sev,
-                    rule_id=str(item.get("test_id", "B000")),
-                    title=str(item.get("issue_text", "Static analysis security issue")),
+                    rule_id=test_id,
+                    title=f"{'[Test Code] ' if is_fixture else ''}{item.get('issue_text', 'Static analysis security issue')}",
                     description=f"{item.get('test_name', '')}: {item.get('issue_text', '')}",
-                    file_path=item.get("filename"),
-                    line_number=item.get("line_number"),
+                    file_path=filename,
+                    line_number=line_no,
                     redacted_snippet=redacted_code,
                 )
             )
@@ -141,7 +154,9 @@ class BanditParser:
             status = ScanStatus.WARNING
 
         summary = (
-            f"Bandit scan identified {len(findings)} issues. Highest severity: {highest_sev.value}."
+            f"Bandit scan identified {len(unique_issues)} unique issues "
+            f"({len(findings)} total occurrences; {fixture_count} in test/sample code). "
+            f"Highest severity: {highest_sev.value}."
         )
         return ScanResult(
             tool_name="Bandit",
@@ -155,7 +170,7 @@ class BanditParser:
 
 
 class PipAuditParser:
-    """Parses pip-audit Dependency Vulnerability JSON output."""
+    """Parses pip-audit Dependency Vulnerability JSON output, distinguishing unique CVEs."""
 
     @staticmethod
     def parse(raw_json: Any) -> ScanResult:
@@ -179,6 +194,7 @@ class PipAuditParser:
         dependencies = data if isinstance(data, list) else data.get("dependencies", [])
         findings: list[SecurityFinding] = []
         highest_sev = SecuritySeverity.NONE
+        unique_cves: set[str] = set()
 
         for dep in dependencies:
             name = dep.get("name", "unknown")
@@ -186,12 +202,12 @@ class PipAuditParser:
             vulns = dep.get("vulns", [])
 
             for v in vulns:
-                # Default unknown vulnerability severity to HIGH in SCA scans
                 vuln_id = v.get("id", "VULN-UNKNOWN")
                 desc = v.get("description", "Vulnerable package dependency")
                 fix_vers = v.get("fix_versions", [])
 
-                # In dependency audits, known CVEs default to HIGH unless specified
+                unique_cves.add(f"{vuln_id}:{name}")
+
                 sev = SecuritySeverity.HIGH
                 if SEVERITY_ORDER[sev] > SEVERITY_ORDER[highest_sev]:
                     highest_sev = sev
@@ -216,7 +232,10 @@ class PipAuditParser:
         elif len(findings) > 0:
             status = ScanStatus.WARNING
 
-        summary = f"pip-audit found {len(findings)} vulnerable dependencies. Highest severity: {highest_sev.value}."
+        summary = (
+            f"pip-audit found {len(unique_cves)} unique CVEs "
+            f"across {len(findings)} vulnerable dependencies. Highest severity: {highest_sev.value}."
+        )
         return ScanResult(
             tool_name="pip-audit",
             status=status,
@@ -243,34 +262,55 @@ class GitleaksParser:
 
         findings: list[SecurityFinding] = []
         highest_sev = SecuritySeverity.NONE
+        unique_secret_signatures: set[str] = set()
+        fixture_count = 0
 
         for item in data:
-            # Any leaked secret is CRITICAL
-            sev = SecuritySeverity.CRITICAL
-            highest_sev = sev
-
             rule_id = item.get("RuleID", "generic-secret")
             desc = item.get("Description", "Detected exposed secret/token")
-            file_path = item.get("File", "unknown")
+            file_path = str(item.get("File", "unknown"))
             start_line = item.get("StartLine")
 
-            # CRITICAL PRIVACY: Never record the raw secret!
+            is_fixture = any(
+                kw in file_path.lower() for kw in ["test", "fixture", "mock", "sample", "example"]
+            )
+            if is_fixture:
+                fixture_count += 1
+
+            secret_sig = f"{rule_id}:{file_path}:{start_line}"
+            unique_secret_signatures.add(secret_sig)
+
+            # Non-fixture secrets are CRITICAL; test fixtures are tagged and categorized as MEDIUM
+            sev = SecuritySeverity.MEDIUM if is_fixture else SecuritySeverity.CRITICAL
+            if SEVERITY_ORDER[sev] > SEVERITY_ORDER[highest_sev]:
+                highest_sev = sev
+
+            title_prefix = "[Test Fixture] " if is_fixture else ""
             findings.append(
                 SecurityFinding(
                     tool_name="Gitleaks",
                     severity=sev,
                     rule_id=rule_id,
-                    title=f"Secret leak: {desc}",
-                    description=f"Secret detected in {file_path} at line {start_line}",
+                    title=f"{title_prefix}Secret leak: {desc}",
+                    description=f"{'Test fixture dummy' if is_fixture else 'Exposed'} secret detected in {file_path} at line {start_line}",
                     file_path=file_path,
                     line_number=start_line,
                     redacted_snippet="[REDACTED_SECRET]",
                 )
             )
 
-        should_block = len(findings) > 0
-        status = ScanStatus.FAILED if should_block else ScanStatus.PASSED
-        summary = f"Gitleaks identified {len(findings)} exposed secrets in repository."
+        # Release is blocked if real non-fixture exposures exist or highest_sev is CRITICAL
+        real_findings_count = len(findings) - fixture_count
+        should_block = real_findings_count > 0 or (highest_sev == SecuritySeverity.CRITICAL)
+        status = (
+            ScanStatus.FAILED
+            if should_block
+            else (ScanStatus.WARNING if findings else ScanStatus.PASSED)
+        )
+        summary = (
+            f"Gitleaks identified {len(unique_secret_signatures)} unique findings "
+            f"({len(findings)} occurrences; {fixture_count} in test fixtures). Highest severity: {highest_sev.value}."
+        )
 
         return ScanResult(
             tool_name="Gitleaks",

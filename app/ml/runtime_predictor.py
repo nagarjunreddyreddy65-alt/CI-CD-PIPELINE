@@ -34,8 +34,10 @@ class RuntimePredictor:
         model_version: str = "v1.0.0",
         n_estimators: int = 100,
         random_state: int = 42,
+        feature_names: list[str] | None = None,
     ):
         self.model_version = model_version
+        self.feature_names = feature_names
         self.model = RandomForestRegressor(
             n_estimators=n_estimators,
             max_depth=6,
@@ -106,10 +108,17 @@ class RuntimePredictor:
 
         if isinstance(features, np.ndarray):
             arr = features.flatten()
-            prev_dur = float(arr[9]) if len(arr) > 9 else 30.0
+            prev_dur = float(arr[3]) if len(arr) > 3 else (float(arr[9]) if len(arr) > 9 else 30.0)
             X_input = arr.reshape(1, -1)
+        elif (
+            hasattr(features, "to_travistorrent_array")
+            and getattr(self, "feature_names", None) is not None
+            and "build_number" in self.feature_names
+        ):
+            prev_dur = getattr(features, "previous_execution_duration", 30.0)
+            X_input = features.to_travistorrent_array()
         else:
-            prev_dur = features.previous_execution_duration
+            prev_dur = getattr(features, "previous_execution_duration", 30.0)
             X_input = features.to_array()
 
         if not self.is_trained:

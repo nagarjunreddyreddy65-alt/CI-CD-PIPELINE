@@ -114,12 +114,16 @@ def train_models(
     _authorized: bool = Depends(verify_admin_token),
 ):
     """Trains and serializes both predictive models with role separation and strict provenance."""
-    if payload.data_source not in ("GENUINE_PIPELINE_TELEMETRY", "SYNTHETIC_BOOTSTRAP"):
+    if payload.data_source not in (
+        "GENUINE_PIPELINE_TELEMETRY",
+        "SYNTHETIC_BOOTSTRAP",
+        "TRAVISTORRENT_GENUINE_DATASET",
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Invalid data_source '{payload.data_source}'. "
-                "Must be 'GENUINE_PIPELINE_TELEMETRY' or 'SYNTHETIC_BOOTSTRAP'."
+                "Must be 'GENUINE_PIPELINE_TELEMETRY', 'TRAVISTORRENT_GENUINE_DATASET', or 'SYNTHETIC_BOOTSTRAP'."
             ),
         )
 
@@ -129,6 +133,46 @@ def train_models(
                 db=db,
                 min_runs=settings.MIN_TRAINING_RUNS,
             )
+        elif payload.data_source == "TRAVISTORRENT_GENUINE_DATASET":
+            from scripts.train_travistorrent_models import (
+                DEFAULT_REGISTRY_DIR,
+                benchmark_candidates,
+                find_dataset,
+                load_and_preprocess,
+                train_production_models,
+            )
+
+            ds_path = find_dataset()
+            (
+                clean_df,
+                X_train,
+                y_train_fail,
+                y_train_time,
+                X_test,
+                y_test_fail,
+                y_test_time,
+            ) = load_and_preprocess(ds_path)
+            benchmarks = benchmark_candidates(
+                X_train=X_train,
+                y_train_fail=y_train_fail,
+                y_train_time=y_train_time,
+                X_test=X_test,
+                y_test_fail=y_test_fail,
+                y_test_time=y_test_time,
+            )
+            result = train_production_models(
+                clean_df=clean_df,
+                X_train=X_train,
+                y_train_fail=y_train_fail,
+                y_train_time=y_train_time,
+                X_test=X_test,
+                y_test_fail=y_test_fail,
+                y_test_time=y_test_time,
+                dataset_path=ds_path,
+                registry_dir=DEFAULT_REGISTRY_DIR,
+                benchmarks=benchmarks,
+            )
+            model_manager.load_models()
         else:
             result = model_manager.train_and_persist(
                 n_samples=payload.n_samples,

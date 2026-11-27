@@ -199,7 +199,7 @@ def test_api_record_telemetry_terminal_lock_prevents_rollback_to_running():
     res1 = client.post("/api/v1/telemetry/record", json=fail_payload)
     assert res1.status_code == 201
 
-    # 2. Attempt rollback to RUNNING
+    # 2. Attempt rollback to RUNNING (should be rejected with HTTP 409 Conflict)
     run_payload = {
         "pipeline_run_id": unique_run_id,
         "cpu_percent_avg": 36.0,
@@ -207,7 +207,7 @@ def test_api_record_telemetry_terminal_lock_prevents_rollback_to_running():
         "status": "RUNNING",
     }
     res2 = client.post("/api/v1/telemetry/record", json=run_payload)
-    assert res2.status_code == 201
+    assert res2.status_code == 409
 
     # 3. Query DB to confirm status remained FAILED
     db = TestingSessionLocal()
@@ -220,14 +220,32 @@ def test_api_record_telemetry_terminal_lock_prevents_rollback_to_running():
 def test_api_record_telemetry_supported_lifecycle_statuses():
     """Verifies that all supported PipelineLifecycleStatus enum values are accepted."""
     for st in ["RUNNING", "SUCCESS", "FAILED", "ABORTED", "CANCELLED"]:
+        rid = f"test-run-status-{st.lower()}-{uuid.uuid4().hex[:6]}"
+        db = TestingSessionLocal()
+        run = PipelineRun(
+            id=rid,
+            repository_id="isolated-repo-id",
+            workflow_name="Status Test CI",
+            status="RUNNING",
+        )
+        db.add(run)
+        db.commit()
+        db.close()
+
         payload = {
-            "pipeline_run_id": "test-run-sec-001",
+            "pipeline_run_id": rid,
             "cpu_percent_avg": 25.0,
             "memory_mb_peak": 110.0,
             "status": st,
         }
         res = client.post("/api/v1/telemetry/record", json=payload)
         assert res.status_code == 201
+
+        db = TestingSessionLocal()
+        saved_run = db.query(PipelineRun).filter(PipelineRun.id == rid).first()
+        assert saved_run is not None
+        assert saved_run.status == st
+        db.close()
 
 
 def test_api_detect_anomalies():

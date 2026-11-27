@@ -13,7 +13,7 @@ Provides explainable root-cause grouping without unneeded deep learning.
 import hashlib
 import re
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
@@ -55,6 +55,13 @@ class EventCorrelator:
         self.time_window = timedelta(seconds=time_window_seconds)
 
     @staticmethod
+    def _normalize_ts(dt: datetime) -> datetime:
+        """Normalizes datetime to UTC timezone-aware."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+
+    @staticmethod
     def normalize_failure_signature(error_msg: str) -> str:
         """
         Extracts a clean, normalized failure signature by stripping variable noise
@@ -90,13 +97,18 @@ class EventCorrelator:
 
     def correlate_events(self, events: list[FailureEvent]) -> list[CorrelatedEventGroup]:
         """
-        Groups events by (repository, failure_signature) within the sliding time window.
+        Groups events by (repository, failure_signature) strictly within the configured time window.
+
+        Enforces:
+        1. Timezone-normalized chronological ordering (handles aware & naive UTC).
+        2. Events separated by more than self.time_window form distinct incident groups.
+        3. Repository isolation: identical errors across different repositories are never conflated.
         """
         if not events:
             return []
 
-        # Sort chronologically
-        sorted_events = sorted(events, key=lambda e: e.timestamp)
+        # Sort chronologically by normalized timestamp (handles out-of-order events)
+        sorted_events = sorted(events, key=lambda e: self._normalize_ts(e.timestamp))
         groups: list[CorrelatedEventGroup] = []
 
         # Map by key: (repository, signature)
@@ -109,43 +121,63 @@ class EventCorrelator:
                 clusters[key] = []
             clusters[key].append(evt)
 
-        # Build correlated groups
+        # Build correlated groups enforcing configured time window
         for key, cluster in clusters.items():
             repo, sig = key.split("::", 1)
-            commits = sorted({e.commit_hash for e in cluster})
-            tests = sorted({e.test_identifier for e in cluster if e.test_identifier})
-            workflows = sorted({e.workflow_name for e in cluster})
 
-            first_seen_dt = cluster[0].timestamp
-            last_seen_dt = cluster[-1].timestamp
+            window_subclusters: list[list[FailureEvent]] = []
+            current_subcluster: list[FailureEvent] = []
 
-            # Deterministic group hash
-            raw_hash = f"{repo}_{sig}_{first_seen_dt.isoformat()}"
-            group_id = hashlib.sha256(raw_hash.encode("utf-8")).hexdigest()[:12]
+            for evt in cluster:
+                evt_ts = self._normalize_ts(evt.timestamp)
+                if not current_subcluster:
+                    current_subcluster.append(evt)
+                else:
+                    first_ts = self._normalize_ts(current_subcluster[0].timestamp)
+                    if (evt_ts - first_ts) <= self.time_window:
+                        current_subcluster.append(evt)
+                    else:
+                        window_subclusters.append(current_subcluster)
+                        current_subcluster = [evt]
 
-            # Systemic if multiple commits or multiple workflows experienced the exact same error
-            is_systemic = len(commits) > 1 or len(workflows) > 1
+            if current_subcluster:
+                window_subclusters.append(current_subcluster)
 
-            desc = (
-                f"Systemic failure: '{sig}' observed {len(cluster)} times across {len(commits)} commits."
-                if is_systemic
-                else f"Isolated failure: '{sig}' observed {len(cluster)} time(s) in commit {commits[0][:8]}."
-            )
+            for sub_cluster in window_subclusters:
+                commits = sorted({e.commit_hash for e in sub_cluster})
+                tests = sorted({e.test_identifier for e in sub_cluster if e.test_identifier})
+                workflows = sorted({e.workflow_name for e in sub_cluster})
 
-            groups.append(
-                CorrelatedEventGroup(
-                    group_id=group_id,
-                    failure_signature=sig,
-                    repository=repo,
-                    workflow_name=", ".join(workflows),
-                    occurrence_count=len(cluster),
-                    affected_commits=commits,
-                    affected_tests=tests,
-                    first_seen=first_seen_dt.isoformat(),
-                    last_seen=last_seen_dt.isoformat(),
-                    is_systemic=is_systemic,
-                    description=desc,
+                first_seen_dt = self._normalize_ts(sub_cluster[0].timestamp)
+                last_seen_dt = self._normalize_ts(sub_cluster[-1].timestamp)
+
+                # Deterministic group hash
+                raw_hash = f"{repo}_{sig}_{first_seen_dt.isoformat()}"
+                group_id = hashlib.sha256(raw_hash.encode("utf-8")).hexdigest()[:12]
+
+                # Systemic if multiple commits or multiple workflows experienced the exact same error
+                is_systemic = len(commits) > 1 or len(workflows) > 1
+
+                desc = (
+                    f"Systemic failure: '{sig}' observed {len(sub_cluster)} times across {len(commits)} commits."
+                    if is_systemic
+                    else f"Isolated failure: '{sig}' observed {len(sub_cluster)} time(s) in commit {commits[0][:8]}."
                 )
-            )
+
+                groups.append(
+                    CorrelatedEventGroup(
+                        group_id=group_id,
+                        failure_signature=sig,
+                        repository=repo,
+                        workflow_name=", ".join(workflows),
+                        occurrence_count=len(sub_cluster),
+                        affected_commits=commits,
+                        affected_tests=tests,
+                        first_seen=first_seen_dt.isoformat(),
+                        last_seen=last_seen_dt.isoformat(),
+                        is_systemic=is_systemic,
+                        description=desc,
+                    )
+                )
 
         return groups

@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Overview{% endblock %} — Autonomous DevOps Platform</title>
+  <title>{% block title %}Overview{% endblock %} — Autonomous DevOps Command Center</title>
   <link rel="stylesheet" href="/static/css/dashboard.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   {% block extra_head %}{% endblock %}
@@ -18,92 +18,106 @@
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
     <!-- Sidebar Navigation -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="appSidebar">
       <div class="sidebar-header">
-        <div class="brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        <a href="/dashboard/overview" class="brand-wrapper">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <div class="brand-details">
+            <span class="brand-title">Autonomous DevOps</span>
+            <span class="brand-subtitle">CI/CD Optimization</span>
+          </div>
+        </a>
+        <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse or Expand Sidebar" aria-label="Toggle sidebar width">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
-        </div>
-        <div class="brand-details">
-          <span class="brand-title">Autonomous DevOps</span>
-          <span class="brand-subtitle">CI/CD Optimization</span>
-        </div>
+        </button>
       </div>
 
       <nav class="sidebar-nav">
         <div class="nav-section-title">Operations & Analytics</div>
 
-        <a href="/dashboard/overview" class="nav-link {% if active_page == 'overview' %}active{% endif %}">
+        <a href="/dashboard/overview" class="nav-link {% if active_page == 'overview' %}active{% endif %}" data-tooltip="Overview">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7"></rect>
-            <rect x="14" y="3" width="7" height="7"></rect>
-            <rect x="14" y="14" width="7" height="7"></rect>
-            <rect x="3" y="14" width="7" height="7"></rect>
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
           </svg>
-          <span>Overview</span>
+          <span class="nav-text">Overview</span>
+          <span class="nav-badge">Live</span>
         </a>
 
-        <a href="/dashboard/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">
+        <a href="/dashboard/history" class="nav-link {% if active_page == 'history' %}active{% endif %}" data-tooltip="Pipeline History">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          <span>Pipeline History</span>
+          <span class="nav-text">Pipeline History</span>
+          <span class="nav-badge">Audited</span>
         </a>
 
         <div class="nav-section-title">Intelligent Optimization</div>
 
-        <a href="/dashboard/ai-insights" class="nav-link {% if active_page == 'ai_insights' %}active{% endif %}">
+        <a href="/dashboard/ai-insights" class="nav-link {% if active_page == 'ai_insights' %}active{% endif %}" data-tooltip="AI Insights">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2a10 10 0 1 0 10 10H12V2z"></path>
             <path d="M12 2a10 10 0 0 1 10 10"></path>
             <path d="M12 12L2.5 7.5"></path>
           </svg>
-          <span>AI Insights</span>
+          <span class="nav-text">AI Insights</span>
+          <span class="nav-badge">ML Active</span>
         </a>
 
-        <a href="/dashboard/optimization" class="nav-link {% if active_page == 'optimization' %}active{% endif %}">
+        <a href="/dashboard/optimization" class="nav-link {% if active_page == 'optimization' %}active{% endif %}" data-tooltip="Test Optimization">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6"></polyline>
             <polyline points="8 6 2 12 8 18"></polyline>
           </svg>
-          <span>Test Optimization</span>
+          <span class="nav-text">Test Optimization</span>
+          <span class="nav-badge">21 Rules</span>
         </a>
 
-        <a href="/dashboard/security" class="nav-link {% if active_page == 'security' %}active{% endif %}">
+        <a href="/dashboard/security" class="nav-link {% if active_page == 'security' %}active{% endif %}" data-tooltip="Security & Compliance">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
           </svg>
-          <span>Security & Compliance</span>
+          <span class="nav-text">Security & Compliance</span>
+          <span class="nav-badge">SAST/SCA</span>
         </a>
 
         <div class="nav-section-title">Diagnostics & Health</div>
 
-        <a href="/dashboard/observability" class="nav-link {% if active_page == 'observability' %}active{% endif %}">
+        <a href="/dashboard/observability" class="nav-link {% if active_page == 'observability' %}active{% endif %}" data-tooltip="Observability">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          <span>Observability</span>
+          <span class="nav-text">Observability</span>
+          <span class="nav-badge">Z-Score</span>
         </a>
 
-        <a href="/dashboard/health" class="nav-link {% if active_page == 'health' %}active{% endif %}">
+        <a href="/dashboard/health" class="nav-link {% if active_page == 'health' %}active{% endif %}" data-tooltip="System Health">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
           </svg>
-          <span>System Health</span>
+          <span class="nav-text">System Health</span>
+          <span class="nav-badge">Online</span>
         </a>
       </nav>
 
       <div class="sidebar-footer">
         <div class="project-meta-card">
           <div class="project-meta-title">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-primary);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-cyan);">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
             </svg>
-            MCA Capstone Project
+            Autonomous Engine
           </div>
           <div class="project-meta-desc">
             AI Predicts Probability. Deterministic Safety Rules Decide Execution.
@@ -127,11 +141,30 @@
           <div class="breadcrumbs">
             <span>Autonomous DevOps</span>
             <span>/</span>
-            <span class="current">{{ self.title() }}</span>
+            <span class="current">{% block page_title %}Executive Pipeline Overview{% endblock %}</span>
           </div>
         </div>
 
+        <!-- Header Middle - Quick Search -->
+        <div class="header-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="headerGlobalSearch" placeholder="Quick search runs, commits, rules..." aria-label="Quick search">
+          <span class="kbd-hint">Ctrl K</span>
+        </div>
+
+        <!-- Header Right -->
         <div class="header-right">
+          <!-- Global Date Range Filter Pills -->
+          <div class="date-range-pills" id="globalDateRangePills">
+            <button type="button" class="date-pill-btn active" data-range="ALL">ALL</button>
+            <button type="button" class="date-pill-btn" data-range="7D">7D</button>
+            <button type="button" class="date-pill-btn" data-range="24H">24H</button>
+            <button type="button" class="date-pill-btn" data-range="1H">1H</button>
+          </div>
+
           {% if is_demo_data %}
             <div class="status-pill demo" title="Running in simulated demonstration mode. Real PostgreSQL schema available.">
               <span class="pulse-dot"></span>
@@ -143,6 +176,59 @@
               <span>Production Telemetry Active</span>
             </div>
           {% endif %}
+
+          <!-- Notification Bell with Dropdown -->
+          <div class="notification-btn-wrapper">
+            <button class="btn-icon-header" id="notificationBtn" title="View Real-Time System Notifications" aria-label="Notifications">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span class="alert-bubble"></span>
+            </button>
+
+            <!-- Dropdown Notification Drawer -->
+            <div class="notification-drawer" id="notificationDrawer">
+              <div class="notification-drawer-header">
+                <span class="notification-drawer-title">System Audit & Telemetry Alerts</span>
+                <span class="badge badge-info" style="font-size: 0.68rem;">Live Events</span>
+              </div>
+              <div class="notification-list">
+                <div class="notification-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-success);">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                  <div>
+                    <strong style="color: var(--text-primary); display: block;">AST Optimizer Online</strong>
+                    <span>Module graph synchronized. 21 safety fallback policies active.</span>
+                  </div>
+                </div>
+                <div class="notification-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-cyan);">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                  <div>
+                    <strong style="color: var(--text-primary); display: block;">Machine Learning Verification</strong>
+                    <span>Holdout models evaluated. Classification &tau;=0.35, Confidence &rho;=0.70.</span>
+                  </div>
+                </div>
+                <div class="notification-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-warning);">
+                    <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  <div>
+                    <strong style="color: var(--text-primary); display: block;">Deterministic Guardrail</strong>
+                    <span>High-risk commits automatically diverted to Full Suite regression fallback.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <button id="refreshBtn" class="btn-header" onclick="refreshDashboard()" title="Reload dashboard metrics">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -170,13 +256,60 @@
       <main class="page-body">
         <header class="page-header">
           <div>
-            <h1 class="page-title">{% block page_title %}Executive Pipeline Overview{% endblock %}</h1>
+            <h1 class="page-title">{% block page_title_heading %}{{ self.page_title() }}{% endblock %}</h1>
             <div class="page-description">{% block page_description %}AI-driven test impact analysis, risk prediction, and deterministic fallback enforcement{% endblock %}</div>
           </div>
         </header>
 
         {% block content %}{% endblock %}
       </main>
+    </div>
+  </div>
+
+  <!-- Interactive Pipeline Inspector Modal -->
+  <div class="modal-backdrop" id="pipelineInspectorModal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-cyan);">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span id="modalRunTitle">Pipeline Run Inspection</span>
+        </div>
+        <button class="modal-close-btn" id="modalCloseBtn" aria-label="Close modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modalRunBody">
+        <!-- Injected via JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Stage Detail Drawer Modal -->
+  <div class="modal-backdrop" id="stageDetailModal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-primary);">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          <span id="stageModalTitle">Stage Intelligence</span>
+        </div>
+        <button class="modal-close-btn" id="stageModalCloseBtn" aria-label="Close stage modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="stageModalBody">
+        <!-- Injected via JavaScript -->
+      </div>
     </div>
   </div>
 

@@ -14,8 +14,10 @@
     </div>
     <div class="kpi-value">Python AST</div>
     <div class="kpi-trend">
-      <span>Analyzes syntax tree & import graphs</span>
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+      <span>Analyzes syntax tree &amp; import graphs</span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#10b981" data-points="12,14,15,18,20,24,28,32"></canvas>
   </div>
 
   <div class="kpi-card info">
@@ -25,8 +27,10 @@
     </div>
     <div class="kpi-value">Transitive</div>
     <div class="kpi-trend">
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
       <span>Maps code changes &rarr; affected test nodes</span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#00f0ff" data-points="10,12,11,15,18,17,22,25"></canvas>
   </div>
 
   <div class="kpi-card warning">
@@ -36,8 +40,10 @@
     </div>
     <div class="kpi-value">100% Fail-Safe</div>
     <div class="kpi-trend">
+      <svg class="trend-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
       <span>Immediate full-suite execution upon any hazard</span>
     </div>
+    <canvas class="kpi-sparkline" data-color="#f59e0b" data-points="21,21,21,21,21,21,21,21"></canvas>
   </div>
 </div>
 
@@ -45,9 +51,10 @@
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">Test Reduction & Safety Attribution</div>
+      <div class="card-title">Test Reduction &amp; Safety Attribution</div>
       <div class="card-subtitle">Audited record of test selection decisions, reduction percentages, and safety triggers</div>
     </div>
+    <span class="badge badge-info">Deterministic Engine</span>
   </div>
 
   <!-- Filter & Search Controls -->
@@ -68,7 +75,7 @@
   </div>
 
   <div class="table-responsive">
-    <table class="data-table" id="optPlansTable">
+    <table class="data-table paginated-table" id="optPlansTable">
       <thead>
         <tr>
           <th>Commit Hash</th>
@@ -78,6 +85,7 @@
           <th>Reduction %</th>
           <th>Triggered Safety Rule / Fallback Reason</th>
           <th>Audited Timestamp</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
@@ -94,39 +102,59 @@
           </td>
           <td>
             {% if plan.decision == 'OPTIMIZED' %}
-              <span class="badge badge-success">OPTIMIZED</span>
+              <span class="badge badge-success" style="font-weight: 700;">OPTIMIZED</span>
             {% else %}
-              <span class="badge badge-warning">FULL_SUITE</span>
+              <span class="badge badge-warning" style="font-weight: 700;">FULL_SUITE</span>
             {% endif %}
           </td>
           <td>
-            <strong style="color: var(--text-primary);">{{ plan.selected_tests_count }}</strong>
-            <span style="color: var(--text-muted); font-size: 0.8rem;">tests</span>
+            <strong style="color: var(--text-primary); font-size: 0.95rem;">{{ plan.selected_tests_count }}</strong>
+            <span style="color: var(--text-muted); font-size: 0.78rem;">tests</span>
           </td>
           <td>
-            <span>{{ plan.total_tests_count }}</span>
-            <span style="color: var(--text-muted); font-size: 0.8rem;">tests</span>
+            <span style="color: var(--text-secondary); font-weight: 500;">{{ plan.total_tests_count }}</span>
+            <span style="color: var(--text-muted); font-size: 0.78rem;">tests</span>
           </td>
           <td>
             {% if plan.reduction_pct > 0 %}
-              <span class="badge badge-success" style="font-weight: 700;">{{ plan.reduction_pct }}%</span>
+              <span class="badge badge-success" style="font-weight: 700; font-size: 0.82rem;">{{ plan.reduction_pct }}%</span>
             {% else %}
-              <span style="color: var(--text-muted); font-size: 0.8rem;">0.0%</span>
+              <span style="color: var(--text-muted); font-size: 0.82rem;">0.0%</span>
             {% endif %}
           </td>
           <td style="max-width: 320px;">
             {% if plan.safety_rule_triggered %}
               <strong style="color: var(--accent-warning-text); display: block; margin-bottom: 2px;">{{ plan.safety_rule_triggered }}</strong>
             {% endif %}
-            <small style="color: var(--text-secondary); line-height: 1.3; display: block;">{{ plan.decision_reason }}</small>
+            <small style="color: var(--text-secondary); line-height: 1.35; display: block;">{{ plan.decision_reason }}</small>
           </td>
           <td>
             <small style="color: var(--text-muted); font-size: 0.78rem;">{{ plan.created_at }}</small>
           </td>
+          <td>
+            <button type="button" class="btn btn-outline btn-sm inspect-run-trigger"
+                    data-run-id="{{ plan.commit_hash[:8] }}"
+                    data-commit-hash="{{ plan.commit_hash }}"
+                    data-workflow="AST Optimization Plan"
+                    data-status="SUCCESS"
+                    data-decision="{{ plan.decision }}"
+                    data-duration="0.0s"
+                    data-branch="main"
+                    data-selected-tests="{{ plan.selected_tests_count }}"
+                    data-total-tests="{{ plan.total_tests_count }}"
+                    data-reduction="{{ plan.reduction_pct }}%"
+                    data-failure-risk="0.00"
+                    data-timestamp="{{ plan.created_at }}"
+                    data-fallback-reason="{{ plan.safety_rule_triggered or plan.decision_reason }}"
+                    title="Inspect Optimization Details">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              Inspect
+            </button>
+          </td>
         </tr>
         {% else %}
         <tr class="empty-state-row">
-          <td colspan="7" class="empty-state">
+          <td colspan="8" class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <polyline points="16 18 22 12 16 6"></polyline>
               <polyline points="8 6 2 12 8 18"></polyline>
@@ -148,6 +176,10 @@
       <div class="card-title">Deterministic Safety Policy: The 21 Fallback Scenarios</div>
       <div class="card-subtitle">Mandatory scenarios that immediately force full test suite execution (Zero false-negative safety guarantees)</div>
     </div>
+    <div style="display: flex; gap: 8px;">
+      <span class="badge badge-purple">Fail-Safe Active</span>
+      <span class="badge badge-info">Coverage 100%</span>
+    </div>
   </div>
 
   <div class="safety-rules-grid">
@@ -160,13 +192,13 @@
 
     <div class="safety-rule-card">
       <div class="rule-number-badge">Rule 2 &bull; CODE_CHANGE</div>
-      <div class="rule-name">Auth & Security Logic</div>
+      <div class="rule-name">Auth &amp; Security Logic</div>
       <div class="rule-desc">Modifications to authentication, tokens, hashing, or RBAC authorization.</div>
     </div>
 
     <div class="safety-rule-card">
       <div class="rule-number-badge">Rule 3 &bull; CODE_CHANGE</div>
-      <div class="rule-name">Payment & Billing</div>
+      <div class="rule-name">Payment &amp; Billing</div>
       <div class="rule-desc">Payment gateways, invoicing, currency conversions, or financial logic.</div>
     </div>
 

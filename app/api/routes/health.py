@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.database.session import get_db
+from app.database.session import get_db, get_db_info
 
 router = APIRouter(tags=["Health & Diagnostics"])
 
@@ -40,9 +40,9 @@ def get_health():
     description="Verifies database connectivity and readiness to process CI/CD events.",
 )
 def get_readiness(response: Response, db: Session = Depends(get_db)):
-    """Readiness probe: validates database connection and query capability."""
+    """Readiness probe: validates database connection, dialect, and query capability."""
+    db_info = get_db_info(db)
     db_status = "CONNECTED"
-    db_type = "PostgreSQL" if "postgresql" in settings.DATABASE_URL else "SQLite"
 
     try:
         # Run a simple, fast query to test database connectivity
@@ -58,7 +58,7 @@ def get_readiness(response: Response, db: Session = Depends(get_db)):
     return {
         "ready": is_ready,
         "database_status": db_status,
-        "database_type": db_type,
-        "fallback_active": settings.USE_SQLITE_FALLBACK and "SQLite" in db_type,
+        "database_type": db_info["engine_name"],
+        "fallback_active": db_info["fallback_active"],
         "timestamp_utc": datetime.now(UTC).isoformat(),
     }

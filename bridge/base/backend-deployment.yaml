@@ -1,0 +1,59 @@
+#! backend-deployment.yaml
+# Generated code, do not edit
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: backend
+    namespace: ci-cd-pipeline
+    labels:
+        com.docker.compose.project: ci-cd-pipeline
+        com.docker.compose.service: backend
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            com.docker.compose.project: ci-cd-pipeline
+            com.docker.compose.service: backend
+    strategy:
+        type: Recreate
+    template:
+        metadata:
+            labels:
+                com.docker.compose.project: ci-cd-pipeline
+                com.docker.compose.service: backend
+                com.docker.compose.network.default: "true"
+        spec:
+            restartPolicy: unless-stopped
+            containers:
+                - name: autonomous-devops-backend
+                  image: ci-cd-pipeline-backend
+                  imagePullPolicy: IfNotPresent
+                  args:
+                    - uvicorn
+                    - app.main:app
+                    - --host
+                    - 0.0.0.0
+                    - --port
+                    - 8000
+                    - --reload
+                  env:
+                    - name: DATABASE_URL
+                      value: "postgresql+psycopg2://devops_user:devops_secure_password_2026@db:5432/autonomous_devops_db"
+                    - name: ENVIRONMENT
+                      value: "development"
+                    - name: RUNNER_API_KEY
+                      value: "autonomous_devops_runner_dev_api_key_2026"
+                    - name: SECRET_KEY
+                      value: "autonomous_devops_insecure_default_secret_key_change_in_production"
+                    - name: USE_SQLITE_FALLBACK
+                      value: "True"
+                  ports:
+                    - name: backend-8000
+                      containerPort: 8000
+                  volumeMounts:
+                    - name: app
+                      mountPath: /app
+            volumes:
+                - name: app
+                  hostPath:
+                    path: C:\AI DRIVEN CI_CD OPTIMIZATION\CI-CD-PIPELINE

@@ -7,7 +7,7 @@ and correlate systemic failure events.
 from datetime import UTC, datetime
 from enum import Enum
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -68,6 +68,7 @@ class FailureEventItem(BaseModel):
     workflow_name: str
     error_message: str
     test_identifier: str | None = None
+    timestamp: str | datetime | None = None
 
 
 class CorrelationRequest(BaseModel):
@@ -90,10 +91,37 @@ def record_telemetry(
         if req.status:
             target_status = req.status.value if hasattr(req.status, "value") else str(req.status)
             terminal_states = {"SUCCESS", "FAILED", "ABORTED", "CANCELLED"}
-            # Prevent reverting terminal executions back to RUNNING
-            if run.status in terminal_states and target_status == "RUNNING":
-                pass
+            current_status = run.status
+
+            if current_status in terminal_states:
+                # 1. Late heartbeat / update attempting to transition back to RUNNING
+                if target_status == "RUNNING":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Cannot revert terminal pipeline run '{run.id}' "
+                            f"(status='{current_status}') back to 'RUNNING'."
+                        ),
+                    )
+                # 2. Duplicate terminal update with identical status: idempotent no-op
+                elif target_status == current_status:
+                    pass
+                # 3. Permitted exception: late runner completion for an ABORTED run
+                elif current_status == "ABORTED" and target_status in ("SUCCESS", "FAILED"):
+                    run.status = target_status
+                    if not run.completed_at:
+                        run.completed_at = datetime.now(UTC)
+                # 4. Conflicting terminal status update (e.g. SUCCESS -> FAILED or FAILED -> SUCCESS)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Invalid lifecycle transition: cannot overwrite terminal status "
+                            f"'{current_status}' with '{target_status}' for pipeline run '{run.id}'."
+                        ),
+                    )
             else:
+                # Allowed transition from non-terminal (RUNNING/PENDING)
                 run.status = target_status
                 if target_status in terminal_states and not run.completed_at:
                     run.completed_at = datetime.now(UTC)
@@ -103,9 +131,12 @@ def record_telemetry(
             created_tz = (
                 run.created_at if run.created_at.tzinfo else run.created_at.replace(tzinfo=UTC)
             )
-            run.total_duration_sec = max(
-                0.0, round((run.completed_at - created_tz).total_seconds(), 2)
+            completed_tz = (
+                run.completed_at
+                if run.completed_at.tzinfo
+                else run.completed_at.replace(tzinfo=UTC)
             )
+            run.total_duration_sec = max(0.0, round((completed_tz - created_tz).total_seconds(), 2))
 
     # 2. Upsert telemetry record
     existing = db.query(Telemetry).filter(Telemetry.pipeline_run_id == req.pipeline_run_id).first()
@@ -201,22 +232,39 @@ def correlate_failures(
     _authorized: bool = Depends(verify_runner_token),
 ):
     """
-    Groups and correlates failure events by normalized error signature, repository, and workflow.
+    Groups and correlates failure events by normalized error signature, repository, and workflow,
+    preserving original event timestamps and enforcing the configured time window.
     """
     correlator = EventCorrelator(time_window_seconds=req.time_window_seconds)
 
-    events = [
-        FailureEvent(
-            event_id=item.event_id,
-            repository=item.repository,
-            commit_hash=item.commit_hash,
-            workflow_name=item.workflow_name,
-            error_message=item.error_message,
-            timestamp=datetime.now(UTC),
-            test_identifier=item.test_identifier,
+    events: list[FailureEvent] = []
+    now_utc = datetime.now(UTC)
+
+    for item in req.events:
+        event_dt = now_utc
+        if item.timestamp is not None:
+            if isinstance(item.timestamp, datetime):
+                event_dt = (
+                    item.timestamp if item.timestamp.tzinfo else item.timestamp.replace(tzinfo=UTC)
+                )
+            elif isinstance(item.timestamp, str) and item.timestamp.strip():
+                try:
+                    parsed = datetime.fromisoformat(item.timestamp)
+                    event_dt = parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+                except (ValueError, TypeError):
+                    event_dt = now_utc
+
+        events.append(
+            FailureEvent(
+                event_id=item.event_id,
+                repository=item.repository,
+                commit_hash=item.commit_hash,
+                workflow_name=item.workflow_name,
+                error_message=item.error_message,
+                timestamp=event_dt,
+                test_identifier=item.test_identifier,
+            )
         )
-        for item in req.events
-    ]
 
     groups: list[CorrelatedEventGroup] = correlator.correlate_events(events)
 

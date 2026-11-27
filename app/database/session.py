@@ -4,6 +4,7 @@ Provides seamless fallback between PostgreSQL (production) and SQLite (testing/l
 """
 
 from collections.abc import Generator
+from typing import Any
 
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -77,6 +78,27 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     """Initializes schema tables if they do not exist."""
     Base.metadata.create_all(bind=engine)
+
+
+def get_db_info(session: Session | None = None) -> dict[str, Any]:
+    """Returns runtime database dialect, connectivity status, and fallback status."""
+    try:
+        active_engine = session.get_bind() if session else engine
+        driver = active_engine.url.drivername.lower() if active_engine else "sqlite"
+    except (SQLAlchemyError, AttributeError, RuntimeError):
+        driver = "sqlite"
+
+    is_postgres = "postgresql" in driver
+    is_sqlite = "sqlite" in driver
+    engine_name = "PostgreSQL" if is_postgres else ("SQLite" if is_sqlite else driver.capitalize())
+    fallback_active = is_sqlite and settings.ENVIRONMENT != "testing"
+    return {
+        "engine_name": engine_name,
+        "driver": driver,
+        "is_postgres": is_postgres,
+        "is_sqlite": is_sqlite,
+        "fallback_active": fallback_active,
+    }
 
 
 def get_db() -> Generator[Session, None, None]:

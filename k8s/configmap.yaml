@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autonomous-devops-config
+  labels:
+    app: autonomous-devops
+data:
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+  USE_SQLITE_FALLBACK: "false"
+  MODEL_REGISTRY_PATH: "./app/ml/models"
+  MIN_TRAINING_RUNS: "15"
+  RISK_THRESHOLD: "0.35"
+  STRICT_FALLBACK_MODE: "true"

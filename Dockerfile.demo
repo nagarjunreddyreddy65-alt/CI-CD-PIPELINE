@@ -1,0 +1,41 @@
+# Autonomous DevOps - Demo Container
+# Showcases the complete workflow with automated demonstrations
+
+FROM dhi.io/python:3.11-debian-dev AS demo-builder
+
+WORKDIR /demo
+
+# Install curl and jq for API calls
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workflow demo script
+COPY workflow_demo.sh /demo/
+RUN chmod +x /demo/workflow_demo.sh
+
+# Final Runtime Image
+FROM dhi.io/python:3.11-debian
+
+WORKDIR /demo
+
+# Copy curl and jq from builder
+COPY --from=demo-builder /usr/bin/curl /usr/bin/
+COPY --from=demo-builder /usr/bin/jq /usr/bin/
+COPY --from=demo-builder /etc/ssl /etc/ssl
+
+# Copy demo script (no need for chmod in runtime)
+COPY --from=demo-builder /demo/workflow_demo.sh /demo/
+
+# Set environment
+ENV BACKEND_URL=http://backend:8000
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://backend:8000/api/v1/health || exit 1
+
+# Entry point: Run demo script
+ENTRYPOINT ["/demo/workflow_demo.sh"]

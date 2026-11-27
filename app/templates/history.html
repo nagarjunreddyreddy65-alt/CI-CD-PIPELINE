@@ -9,8 +9,9 @@
   <div class="card-header">
     <div>
       <div class="card-title">Historical Pipeline Ledger</div>
-      <div class="card-subtitle">Audited record of pipeline runs with real-time client-side search and status filters</div>
+      <div class="card-subtitle">Audited record of pipeline runs with real-time client-side search, status filters, and interactive execution inspector</div>
     </div>
+    <span class="badge badge-info">{{ history_runs | length }} Total Records</span>
   </div>
 
   <!-- Table Controls & Search Bar -->
@@ -45,6 +46,7 @@
           <th>Reduction %</th>
           <th>Decision & Attribution</th>
           <th>Executed At</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -88,6 +90,10 @@
               <span class="badge badge-success">Passed</span>
             {% elif run.status == 'FAILED' %}
               <span class="badge badge-failed">Failed</span>
+            {% elif run.status == 'ABORTED' %}
+              <span class="badge badge-warning">Aborted</span>
+            {% elif run.status == 'CANCELLED' %}
+              <span class="badge badge-neutral">Cancelled</span>
             {% else %}
               <span class="badge badge-info">{{ run.status }}</span>
             {% endif %}
@@ -121,10 +127,23 @@
           <td>
             <small style="color: var(--text-muted); font-size: 0.78rem;">{{ run.created_at }}</small>
           </td>
+          <td>
+            <button type="button" class="btn-header inspect-run-trigger" 
+              data-run-id="{{ run.id }}"
+              data-commit="{{ run.commit_hash }}"
+              data-status="{{ run.status }}"
+              data-decision="{{ run.decision }}"
+              data-duration="{{ run.duration_sec }}"
+              data-tests="{{ run.selected_tests }} / {{ run.total_tests }}"
+              data-reason="{{ run.decision_reason }}"
+              style="padding: 3px 8px; font-size: 0.72rem;">
+              Inspect
+            </button>
+          </td>
         </tr>
         {% else %}
         <tr class="empty-state-row">
-          <td colspan="9" class="empty-state">
+          <td colspan="10" class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
